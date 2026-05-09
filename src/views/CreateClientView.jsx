@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import ClientFieldsAdminView from "./ClientFieldsAdminView";
 
 function buildInitialForm(fields) {
   const output = {};
@@ -16,7 +17,20 @@ function buildInitialForm(fields) {
   return output;
 }
 
-export default function CreateClientView({ permissions, clientFields, onAddClient }) {
+function buildInitialFormFromClient(fields, client) {
+  const base = buildInitialForm(fields);
+  if (!client) {
+    return base;
+  }
+  const next = { ...base };
+  (fields || []).forEach((field) => {
+    const key = field.field_key;
+    next[key] = client[key] ?? client.custom_fields_json?.[key] ?? next[key] ?? "";
+  });
+  return next;
+}
+
+export default function CreateClientView({ permissions, fieldManagerPermissions, clientFields, initialClient = null, submitLabel = "Create client", title = "Create Client", onSubmitClient, onAddClient, onAddClientField, onUpdateClientField, onDeleteClientField }) {
   const activeFields = useMemo(
     () =>
       (clientFields || [])
@@ -24,18 +38,20 @@ export default function CreateClientView({ permissions, clientFields, onAddClien
         .sort((a, b) => Number(a.sort_order || 100) - Number(b.sort_order || 100)),
     [clientFields],
   );
-  const [form, setForm] = useState(() => buildInitialForm(activeFields));
+  const [form, setForm] = useState(() => buildInitialFormFromClient(activeFields, initialClient));
+  const [showFieldManager, setShowFieldManager] = useState(false);
+  const canViewFieldManager = !!fieldManagerPermissions?.view;
   useEffect(() => {
     setForm((current) => {
-      const next = { ...buildInitialForm(activeFields), ...current };
+      const next = { ...buildInitialFormFromClient(activeFields, initialClient), ...current };
       return next;
     });
-  }, [activeFields]);
+  }, [activeFields, initialClient]);
 
   if (!permissions?.create) {
     return (
       <section className="view is-active">
-        <article className="panel"><h3>Create Client</h3><p>You do not have permission to create clients.</p></article>
+        <article className="panel"><h3>{title}</h3><p>You do not have permission to create clients.</p></article>
       </section>
     );
   }
@@ -44,18 +60,38 @@ export default function CreateClientView({ permissions, clientFields, onAddClien
     event.preventDefault();
     for (const field of activeFields) {
       if (field.is_required && !String(form[field.field_key] || "").trim()) {
+        window.alert(`${field.label || field.field_key} is required.`);
         return;
       }
     }
-    const ok = await onAddClient(form);
+    const saveHandler = onSubmitClient || onAddClient;
+    const ok = await saveHandler?.(form);
     if (ok) {
-      setForm(buildInitialForm(activeFields));
+      setForm(buildInitialFormFromClient(activeFields, initialClient));
     }
   }
 
   return (
     <section className="view is-active">
-      <div className="section-heading"><div><p className="eyebrow">CRM</p><h2>Create Client</h2></div></div>
+      <div className="section-heading">
+        <div><p className="eyebrow">CRM</p><h2>{title}</h2></div>
+        {canViewFieldManager ? (
+          <button className="button button-secondary" type="button" onClick={() => setShowFieldManager((current) => !current)}>
+            {showFieldManager ? "Hide Field Manager" : "Create/Edit Fields"}
+          </button>
+        ) : null}
+      </div>
+
+      {canViewFieldManager && showFieldManager ? (
+        <ClientFieldsAdminView
+          permissions={fieldManagerPermissions}
+          clientFields={clientFields}
+          onAddClientField={onAddClientField}
+          onUpdateClientField={onUpdateClientField}
+          onDeleteClientField={onDeleteClientField}
+        />
+      ) : null}
+
       <article className="panel">
         <form className="form-grid" onSubmit={handleSubmit}>
           {activeFields.map((field) => {
@@ -86,7 +122,7 @@ export default function CreateClientView({ permissions, clientFields, onAddClien
               </label>
             );
           })}
-          <button className="button button-primary" type="submit">Create client</button>
+          <button className="button button-primary" type="submit">{submitLabel}</button>
         </form>
       </article>
     </section>

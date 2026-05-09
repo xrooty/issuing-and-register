@@ -1,57 +1,77 @@
-# Database Migrations (Repo-Aligned)
+# Database Migrations
 
-This migration set is aligned to `xrooty/issuing-and-register` workflows, and also includes restored admin modules (`clients`, `users`, `activity_log`, `reports`).
+This project now has a canonical migration order for a fresh Supabase setup, plus legacy compatibility migrations for older partially-built databases.
 
-## Run Order
+**Fresh Setup**
 
-1. Run `db/schema.sql`
-2. Run `db/rpc.sql`
-3. Run `db/rls.sql`
+Run these in order:
 
-## Canonical Tables
+1. `db/migrations/20260507_0001_schema.sql`
+2. `db/migrations/20260507_0002_rpc_next_sequence.sql`
+3. `db/migrations/20260507_0003_rls_open_policies.sql`
+4. `db/migrations/20260507_0004_seed_client_fields.sql`
+5. `db/migrations/20260507_0005_portal_schema_compat.sql`
+6. `db/migrations/20260507_0006_letters_hard_fix.sql`
+7. `db/migrations/20260507_0007_dynamic_roles_and_modules.sql`
+8. `db/migrations/20260507_0008_letters_client_id_nullable.sql`
+9. `db/migrations/20260507_0009_auth_profiles_sync.sql`
+10. `db/migrations/20260508_0010_seed_letter_ag_template_types.sql`
+11. `db/migrations/20260508_0010_user_permission_overrides.sql`
+12. `db/migrations/20260509_0011_repair_rls_user_profiles_refs.sql`
+13. `db/migrations/20260509_0012_activity_logging_setting.sql`
+
+**Older DB Compatibility**
+
+If your live database was created from an older version of the project, run the canonical migrations through `20260508_0010_user_permission_overrides.sql`, then run `20260509_0011_repair_rls_user_profiles_refs.sql`, then run `20260509_0012_activity_logging_setting.sql`. The `0011` repair drops old RLS policies that may still reference `public.user_profiles` and recreates clean policies for the current `public.users` role model. The `0012` migration adds the activity-history switch while keeping existing `activity_log` rows unchanged. The older `20260507_fix_clients_schema_compat.sql` is kept only as legacy history.
+
+**Supabase Auth**
+
+Supabase Auth itself is not created by these SQL migrations. It is provided by Supabase. This project's migrations only create the app tables that work alongside Auth, especially `users` and role-linked records.
+
+**Canonical Tables**
 
 - `companies`
 - `departments`
 - `template_types`
 - `templates`
+- `users`
+- `clients`
+- `client_fields`
 - `letters`
 - `sequence_counters`
-- `clients`
-- `users`
 - `activity_log`
 - `reports`
+- `role_permissions`
+- `roles`
+- `permission_modules`
+- `app_settings`
+- `role_data_scopes`
+- `user_permissions`
 
-## CRM + Client Letter Linkage
+**RPC**
 
-- `clients` now includes CRM profile fields:
-  `client_name, contact_name_secondary, designation, email_secondary, whatsapp, city, state, country, postal_code, address, industry, source, priority, assigned_owner, tags, notes, follow_up_date`
-- `letters` now links clients:
-  `client_id`
-- `letters` now records issuer metadata:
-  `issued_by_user_id, issued_by_name`
+- `next_sequence(counter_key text)`
 
-## Required Letter Numbering Fields
+**Client Form Flow**
 
-- Company: `short_code`, `letter_no_pattern`
-- Department: `code`, `letter_no_pattern`
-- Template: `ref_code`, `letter_no_pattern`
-- Letter: `letter_no`, `letter_no_manual`, `letter_no_format_override`, `letter_no_pattern_used`
+The dynamic investment client form depends on:
 
-## Required Template/Versioning Fields
+- `clients.custom_fields_json`
+- `client_fields`
+- seeded default rows from `20260507_0004_seed_client_fields.sql`
 
-- Template: `body_template`, `design_json`, `template_type_id`
-- Letter: `template_snapshot_json`, `custom_fields_json`, `rendered_body`, `pdf_file_name`, `pdf_storage_path`
+**Verification**
 
-## RPC
+After running migrations:
 
-`next_sequence(counter_key text)` is conflict-safe via upsert and should be used for department-level sequence keys.
+1. Confirm the tables above exist.
+2. Run `select public.next_sequence('TEST-KEY');` twice and expect `1` then `2`.
+3. Confirm `client_fields` has seeded rows such as `client_name`, `phone`, `email`, `employer_name`.
+4. Hard refresh the browser if the app was already open.
 
-## Verify After Migration
+**Legacy Files**
 
-1. Tables exist:
-   - `companies, departments, template_types, templates, employees, letters, sequence_counters, users, activity_log`
-   - `companies, departments, template_types, templates, letters, sequence_counters, clients, users, activity_log, reports`
-2. RPC works:
-   - `select next_sequence('TEST-KEY');`
-   - run twice, expect `1` then `2`
-3. RLS enabled for the canonical tables above.
+These older patch files are still kept in the repo for reference/upgrade history, but they are not the canonical fresh-start order:
+
+- `db/migrations/20260507_add_client_fields_dynamic_form.sql`
+- `db/migrations/20260507_fix_clients_schema_compat.sql`

@@ -23,11 +23,12 @@ import {
   buildRegisterRows,
   createId,
   createIssueDraft,
+  normalizeTemplateDesignForIssueType,
   getTodayIso,
   normalizeReferencePattern,
   resolveReferencePattern,
 } from "./utils/lettering";
-import { supabase } from "./lib/supabaseClient";
+import { createIsolatedAuthClient, supabase } from "./lib/supabaseClient";
 
 const EMPTY_DATA = {
   companies: [],
@@ -41,11 +42,24 @@ const EMPTY_DATA = {
   activity: [],
   reports: [],
   rolePermissions: [],
+  roleDataScopes: [],
+  userPermissions: [],
   clientFields: [],
+  roles: [],
+  permissionModules: [],
+  appSettings: {},
+  accessConfigReportId: "",
 };
+const FULL_ACCESS_ROLE = "admin";
+const DEFAULT_ROLES = [FULL_ACCESS_ROLE];
+const DEFAULT_PERMISSION_MODULES = ["dashboard", "companies", "departments", "templates", "issue", "register", "clients-create", "clients-all", "clients-profile", "users", "roles", "activity", "activity_settings", "admin", "client_fields"];
+const ACCESS_CONFIG_REPORT_TYPE = "system_access_config";
+const ACTIVITY_LOGGING_SETTING_KEY = "activity_logging_enabled";
 
 const CLIENT_DB_FIELDS = new Set([
   "client_name",
+  "full_name",
+  "client_code",
   "company",
   "contact_name",
   "contact_name_secondary",
@@ -71,27 +85,20 @@ const CLIENT_DB_FIELDS = new Set([
 
 const DEFAULT_CLIENT_FIELDS = [
   { id: "f-client-name", field_key: "client_name", label: "Client Name", input_type: "text", options_json: [], is_required: true, is_active: true, sort_order: 1, is_system: true },
-  { id: "f-company", field_key: "company", label: "Company", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 2, is_system: true },
-  { id: "f-contact-name", field_key: "contact_name", label: "Contact Name", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 3, is_system: true },
-  { id: "f-contact-name-secondary", field_key: "contact_name_secondary", label: "Contact Name Secondary", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 4, is_system: true },
-  { id: "f-designation", field_key: "designation", label: "Designation", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 5, is_system: true },
-  { id: "f-email", field_key: "email", label: "Email", input_type: "email", options_json: [], is_required: true, is_active: true, sort_order: 6, is_system: true },
-  { id: "f-email-secondary", field_key: "email_secondary", label: "Email Secondary", input_type: "email", options_json: [], is_required: false, is_active: true, sort_order: 7, is_system: true },
-  { id: "f-phone", field_key: "phone", label: "Phone", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 8, is_system: true },
-  { id: "f-whatsapp", field_key: "whatsapp", label: "WhatsApp", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 9, is_system: true },
-  { id: "f-city", field_key: "city", label: "City", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 10, is_system: true },
-  { id: "f-state", field_key: "state", label: "State", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 11, is_system: true },
-  { id: "f-country", field_key: "country", label: "Country", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 12, is_system: true },
-  { id: "f-postal-code", field_key: "postal_code", label: "Postal Code", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 13, is_system: true },
-  { id: "f-address", field_key: "address", label: "Address", input_type: "textarea", options_json: [], is_required: false, is_active: true, sort_order: 14, is_system: true },
-  { id: "f-industry", field_key: "industry", label: "Industry", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 15, is_system: true },
-  { id: "f-source", field_key: "source", label: "Source", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 16, is_system: true },
-  { id: "f-priority", field_key: "priority", label: "Priority", input_type: "select", options_json: ["high", "medium", "low"], is_required: false, is_active: true, sort_order: 17, is_system: true },
-  { id: "f-assigned-owner", field_key: "assigned_owner", label: "Assigned Owner", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 18, is_system: true },
-  { id: "f-tags", field_key: "tags", label: "Tags", input_type: "textarea", options_json: [], is_required: false, is_active: true, sort_order: 19, is_system: true },
-  { id: "f-notes", field_key: "notes", label: "Notes", input_type: "textarea", options_json: [], is_required: false, is_active: true, sort_order: 20, is_system: true },
-  { id: "f-follow-up-date", field_key: "follow_up_date", label: "Follow Up Date", input_type: "date", options_json: [], is_required: false, is_active: true, sort_order: 21, is_system: true },
-  { id: "f-status", field_key: "status", label: "Status", input_type: "select", options_json: ["active", "on_hold", "closed"], is_required: false, is_active: true, sort_order: 22, is_system: true },
+  { id: "f-phone", field_key: "phone", label: "Phone", input_type: "text", options_json: [], is_required: true, is_active: true, sort_order: 2, is_system: true },
+  { id: "f-email", field_key: "email", label: "Email", input_type: "email", options_json: [], is_required: true, is_active: true, sort_order: 3, is_system: true },
+  { id: "f-cnic", field_key: "cnic", label: "CNIC / National ID", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 4, is_system: false },
+  { id: "f-address", field_key: "address", label: "Address", input_type: "textarea", options_json: [], is_required: false, is_active: true, sort_order: 5, is_system: true },
+  { id: "f-job-title", field_key: "job_title", label: "Job Title", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 6, is_system: false },
+  { id: "f-employer", field_key: "employer_name", label: "Employer / Business Name", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 7, is_system: false },
+  { id: "f-source-income", field_key: "source_of_income", label: "Source of Income", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 8, is_system: false },
+  { id: "f-monthly-income", field_key: "monthly_income_range", label: "Monthly Income Range", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 9, is_system: false },
+  { id: "f-bank-name", field_key: "bank_name", label: "Bank Name", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 10, is_system: false },
+  { id: "f-account-title", field_key: "account_title", label: "Account Title", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 11, is_system: false },
+  { id: "f-account-number", field_key: "account_number", label: "Account Number", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 12, is_system: false },
+  { id: "f-iban", field_key: "iban", label: "IBAN", input_type: "text", options_json: [], is_required: false, is_active: true, sort_order: 13, is_system: false },
+  { id: "f-notes", field_key: "notes", label: "Notes", input_type: "textarea", options_json: [], is_required: false, is_active: true, sort_order: 14, is_system: true },
+  { id: "f-status", field_key: "status", label: "Status", input_type: "select", options_json: ["active", "on_hold", "closed"], is_required: false, is_active: true, sort_order: 15, is_system: true },
 ];
 
 const VIEWS = [
@@ -103,12 +110,13 @@ const VIEWS = [
   { id: "register", label: "Register" },
   { id: "clients-create", label: "Create Client" },
   { id: "clients-all", label: "All Clients" },
-  { id: "clients-profile", label: "Client Profile" },
+  { id: "clients-profile", label: "Client Profile", showInNav: false },
   { id: "users", label: "Users" },
   { id: "roles", label: "Roles" },
   { id: "activity", label: "Activity" },
   { id: "admin", label: "Admin" },
 ];
+const VIEW_LABEL_MAP = Object.fromEntries(VIEWS.map((view) => [view.id, view.label]));
 
 function normalizeTemplateTypeCode(value) {
   return String(value || "")
@@ -116,6 +124,38 @@ function normalizeTemplateTypeCode(value) {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "")
     .slice(0, 12);
+}
+
+function normalizeCompanyCode(value, fallbackName = "") {
+  const explicitCode = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 12);
+
+  if (explicitCode) {
+    return explicitCode;
+  }
+
+  const words = String(fallbackName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!words.length) {
+    return "CMP";
+  }
+
+  if (words.length === 1) {
+    return words[0].replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 3) || "CMP";
+  }
+
+  return words
+    .map((word) => word[0])
+    .join("")
+    .replace(/[^A-Z0-9]/gi, "")
+    .toUpperCase()
+    .slice(0, 6) || "CMP";
 }
 
 function parseJson(value, fallback) {
@@ -135,10 +175,12 @@ function parseJson(value, fallback) {
 }
 
 function mapCompany(row) {
+  const shortCode = normalizeCompanyCode(row.short_code || row.code, row.name);
+
   return {
     id: row.id,
     name: row.name,
-    shortCode: row.short_code,
+    shortCode,
     address: row.address || "",
     phone: row.phone || "",
     email: row.email || "",
@@ -174,7 +216,7 @@ function mapTemplate(row) {
     departmentId: row.department_id,
     templateTypeId: row.template_type_id || null,
     name: row.name,
-    type: typeRef?.name || "",
+    type: typeRef?.name || row.type || row.template_type || row.name || "",
     refCode: row.ref_code || "",
     defaultSubject: row.default_subject || "",
     bodyTemplate: row.body_template || "",
@@ -196,6 +238,10 @@ function mapLetter(row) {
     templateId: row.template_id,
     clientId: row.client_id || null,
     templateTypeId: row.template_type_id || null,
+    legacyClientName: row.client_name || row.recipient_name || templateSnapshot?.clientName || "",
+    legacyClientEmail: row.client_email || templateSnapshot?.clientEmail || "",
+    legacyClientCompany: row.client_company || row.recipient_company || templateSnapshot?.clientCompany || "",
+    legacyTemplateType: row.template_type || templateSnapshot?.type || templateSnapshot?.templateType || "",
     letterNo: row.letter_no,
     letterNoManual: row.letter_no_manual || "",
     letterNoFormatOverride: row.letter_no_format_override || "",
@@ -222,10 +268,13 @@ function mapLetter(row) {
 
 function mapClient(row) {
   const parsedCustom = parseJson(row.custom_fields_json, {});
+  const resolvedClientName = row.client_name || row.full_name || "";
   return {
     ...row,
+    client_name: resolvedClientName,
+    full_name: row.full_name || resolvedClientName,
     custom_fields_json: parsedCustom && typeof parsedCustom === "object" ? parsedCustom : {},
-    display_name: row.client_name || row.contact_name || row.company || row.email || "Client",
+    display_name: resolvedClientName || row.contact_name || row.company || row.email || "Client",
   };
 }
 
@@ -261,6 +310,102 @@ function mapRolePermission(row) {
   return row;
 }
 
+function mapUserPermission(row) {
+  return {
+    ...row,
+    can_view: typeof row.can_view === "boolean" ? row.can_view : null,
+    can_create: typeof row.can_create === "boolean" ? row.can_create : null,
+    can_edit: typeof row.can_edit === "boolean" ? row.can_edit : null,
+    can_delete: typeof row.can_delete === "boolean" ? row.can_delete : null,
+    scope_type: row.scope_type || null,
+    department_names: Array.isArray(row.department_names) ? row.department_names : [],
+  };
+}
+
+function mapRoleDataScope(row) {
+  return {
+    ...row,
+    role: normalizeRoleName(row.role),
+    department_names: Array.isArray(row.department_names) ? row.department_names : [],
+  };
+}
+
+function mapRole(row) {
+  return row;
+}
+
+function mapPermissionModule(row) {
+  return row;
+}
+
+function mapAppSetting(row) {
+  return row;
+}
+
+function isActivityLoggingEnabledFromSettings(settings = {}) {
+  return settings[ACTIVITY_LOGGING_SETTING_KEY] !== false;
+}
+
+function normalizeRoleName(role) {
+  const value = String(role || "").trim();
+  return value;
+}
+
+function hasFullAccessRole(role) {
+  return normalizeRoleName(role) === FULL_ACCESS_ROLE;
+}
+
+function buildRolePermissionMatrix(roles = [], modules = [], rolePermissionRows = []) {
+  const output = {};
+  roles.forEach((role) => {
+    output[role] = {};
+    modules.forEach((module) => {
+      output[role][module] = {
+        view: hasFullAccessRole(role),
+        create: hasFullAccessRole(role),
+        edit: hasFullAccessRole(role),
+        delete: hasFullAccessRole(role),
+      };
+    });
+  });
+  (rolePermissionRows || []).forEach((row) => {
+    const role = normalizeRoleName(row.role);
+    if (!output[role]) output[role] = {};
+    output[role][row.module] = {
+      view: !!row.can_view,
+      create: !!row.can_create,
+      edit: !!row.can_edit,
+      delete: !!row.can_delete,
+    };
+  });
+  return output;
+}
+
+function applyUserPermissionOverrides(base = {}, overrideRows = []) {
+  const output = {};
+  Object.entries(base || {}).forEach(([module, permissions]) => {
+    output[module] = { ...permissions };
+  });
+  (overrideRows || []).forEach((row) => {
+    const current = output[row.module] || { view: false, create: false, edit: false, delete: false };
+    output[row.module] = {
+      view: typeof row.can_view === "boolean" ? row.can_view : current.view,
+      create: typeof row.can_create === "boolean" ? row.can_create : current.create,
+      edit: typeof row.can_edit === "boolean" ? row.can_edit : current.edit,
+      delete: typeof row.can_delete === "boolean" ? row.can_delete : current.delete,
+    };
+    if (output[row.module].create || output[row.module].edit || output[row.module].delete) {
+      output[row.module].view = true;
+    }
+    if (!output[row.module].view) {
+      output[row.module].create = false;
+      output[row.module].edit = false;
+      output[row.module].delete = false;
+    }
+  });
+  return output;
+}
+
 function mapClientField(row) {
   return {
     ...row,
@@ -280,12 +425,130 @@ function buildSequenceKey({ company, department }) {
   return [company.id, department.id].join(":");
 }
 
+function getClientValue(client, key) {
+  if (!client || !key) {
+    return "";
+  }
+
+  if (client[key] != null && String(client[key]).trim()) {
+    return String(client[key]).trim();
+  }
+
+  if (key === "client_name" && client.full_name != null && String(client.full_name).trim()) {
+    return String(client.full_name).trim();
+  }
+
+  if (key === "full_name" && client.client_name != null && String(client.client_name).trim()) {
+    return String(client.client_name).trim();
+  }
+
+  const custom = client.custom_fields_json;
+  if (custom && typeof custom === "object" && custom[key] != null) {
+    return String(custom[key]).trim();
+  }
+
+  return "";
+}
+
+function buildIssueDraftPatchFromClient(client) {
+  if (!client) {
+    return {};
+  }
+
+  const recipientName = getClientValue(client, "client_name")
+    || getClientValue(client, "contact_name")
+    || getClientValue(client, "display_name");
+  const recipientCompany = getClientValue(client, "company")
+    || getClientValue(client, "employer_name");
+  const recipientDepartment = getClientValue(client, "designation")
+    || getClientValue(client, "department");
+  const email = getClientValue(client, "email") || getClientValue(client, "email_secondary");
+  const phone = getClientValue(client, "phone") || getClientValue(client, "whatsapp");
+  const cnic = getClientValue(client, "cnic");
+  const address = getClientValue(client, "address");
+
+  return {
+    recipientName,
+    recipientCompany,
+    recipientDepartment,
+    employeeFullName: recipientName,
+    employeeCnic: cnic,
+    employeeDesignation: recipientDepartment,
+    employeeDepartmentName: recipientDepartment,
+    employeePersonalPhone: phone,
+    employeeCompanyEmail: email,
+    employeeAddress: address,
+  };
+}
+
+function findLinkedClient(clients, letter) {
+  const source = Array.isArray(clients) ? clients : [];
+  if (!letter) {
+    return null;
+  }
+
+  if (letter.clientId) {
+    const direct = source.find((client) => client.id === letter.clientId);
+    if (direct) {
+      return direct;
+    }
+  }
+
+  const byEmail = String(letter.legacyClientEmail || "").trim().toLowerCase();
+  if (byEmail) {
+    const emailMatch = source.find((client) => String(client.email || "").trim().toLowerCase() === byEmail);
+    if (emailMatch) {
+      return emailMatch;
+    }
+  }
+
+  const byName = String(letter.legacyClientName || letter.recipientName || "").trim().toLowerCase();
+  const byCompany = String(letter.legacyClientCompany || letter.recipientCompany || "").trim().toLowerCase();
+
+  return source.find((client) => {
+    const clientName = String(client.client_name || client.full_name || client.contact_name || "").trim().toLowerCase();
+    const clientCompany = String(client.company || "").trim().toLowerCase();
+    return (byName && clientName === byName) || (byCompany && clientCompany === byCompany);
+  }) || null;
+}
+
 function ensureSupabaseSuccess(result, message) {
   if (result.error) {
     throw new Error(`${message}: ${result.error.message}`);
   }
 
   return result.data;
+}
+
+function isMissingRelationError(error) {
+  const text = `${error?.code || ""} ${error?.message || ""}`.toLowerCase();
+  return text.includes("42p01") || text.includes("does not exist") || text.includes("could not find the table");
+}
+
+async function findUserProfileByEmail(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { data: null, error: null };
+  }
+
+  return supabase
+    .from("users")
+    .select("id, email, full_name, role, active")
+    .ilike("email", normalizedEmail)
+    .maybeSingle();
+}
+
+function findUserProfileInData(users = [], authUser = null, email = "") {
+  const authId = String(authUser?.id || "").trim();
+  const normalizedEmail = String(email || authUser?.email || "").trim().toLowerCase();
+  return users.find((user) => authId && String(user.id || "").trim() === authId)
+    || users.find((user) => normalizedEmail && String(user.email || "").trim().toLowerCase() === normalizedEmail)
+    || null;
+}
+
+function getRoleNamesFromData(source = {}) {
+  const dbRoles = (source.roles || []).map((row) => normalizeRoleName(row.name)).filter(Boolean);
+  return Array.from(new Set([...DEFAULT_ROLES, ...dbRoles]));
 }
 
 async function ensureTemplateType(typeText) {
@@ -319,6 +582,58 @@ async function ensureTemplateType(typeText) {
   return ensureSupabaseSuccess(created, "Template type create failed");
 }
 
+async function ensureIssueReferencesPersisted({ company, department, template, templateTypeName }) {
+  const typeRef = await ensureTemplateType(templateTypeName || template?.type || template?.name || "Template");
+  const companyCode = normalizeCompanyCode(company.shortCode || company.code, company.name);
+
+  const companyRes = await supabase.from("companies").upsert(
+    {
+      id: company.id,
+      name: String(company.name || "").trim(),
+      short_code: companyCode,
+      code: companyCode,
+      address: String(company.address || "").trim(),
+      phone: String(company.phone || "").trim(),
+      email: String(company.email || "").trim(),
+      footer_text: String(company.footerText || "").trim(),
+      letter_no_pattern: normalizeReferencePattern(company.letterNoPattern),
+    },
+    { onConflict: "id" },
+  );
+  ensureSupabaseSuccess(companyRes, "Company sync failed");
+
+  const departmentRes = await supabase.from("departments").upsert(
+    {
+      id: department.id,
+      company_id: company.id,
+      name: String(department.name || "").trim(),
+      code: String(department.code || "").trim().toUpperCase(),
+      letter_no_pattern: normalizeReferencePattern(department.letterNoPattern),
+    },
+    { onConflict: "id" },
+  );
+  ensureSupabaseSuccess(departmentRes, "Department sync failed");
+
+  const templateRes = await supabase.from("templates").upsert(
+    {
+      id: template.id,
+      company_id: company.id,
+      department_id: department.id,
+      template_type_id: typeRef.id,
+      name: String(template.name || "").trim(),
+      ref_code: String(template.refCode || "").trim().toUpperCase(),
+      default_subject: String(template.defaultSubject || "").trim(),
+      body_template: String(template.bodyTemplate || ""),
+      letter_no_pattern: normalizeReferencePattern(template.letterNoPattern),
+      design_json: template.design || {},
+    },
+    { onConflict: "id" },
+  );
+  ensureSupabaseSuccess(templateRes, "Template sync failed");
+
+  return typeRef;
+}
+
 async function ensureDepartmentSequenceSeed(company, department) {
   const departmentKey = buildSequenceKey({ company, department });
   const currentCounterRes = await supabase.from("sequence_counters").select("current").eq("key", departmentKey).maybeSingle();
@@ -347,7 +662,7 @@ async function ensureDepartmentSequenceSeed(company, department) {
 }
 
 async function fetchBootstrapData() {
-  const [companiesRes, departmentsRes, templateTypesRes, templatesRes, lettersRes, sequencesRes, clientsRes, usersRes, activityRes, reportsRes, rolePermissionsRes] = await Promise.all([
+  const [companiesRes, departmentsRes, templateTypesRes, templatesRes, lettersRes, sequencesRes, clientsRes, usersRes, activityRes, reportsRes, rolePermissionsRes, roleDataScopesRes, userPermissionsRes, rolesRes, permissionModulesRes, appSettingsRes] = await Promise.all([
     supabase.from("companies").select("*").order("name", { ascending: true }),
     supabase.from("departments").select("*").order("name", { ascending: true }),
     supabase.from("template_types").select("*").order("name", { ascending: true }),
@@ -364,6 +679,11 @@ async function fetchBootstrapData() {
     supabase.from("activity_log").select("*").order("created_at", { ascending: false }),
     supabase.from("reports").select("*").order("created_at", { ascending: false }),
     supabase.from("role_permissions").select("*"),
+    supabase.from("role_data_scopes").select("*"),
+    supabase.from("user_permissions").select("*"),
+    supabase.from("roles").select("*").order("name", { ascending: true }),
+    supabase.from("permission_modules").select("*").order("name", { ascending: true }),
+    supabase.from("app_settings").select("*"),
   ]);
 
   ensureSupabaseSuccess(companiesRes, "Company fetch failed");
@@ -377,6 +697,15 @@ async function fetchBootstrapData() {
   ensureSupabaseSuccess(activityRes, "Activity fetch failed");
   ensureSupabaseSuccess(reportsRes, "Reports fetch failed");
   ensureSupabaseSuccess(rolePermissionsRes, "Role permissions fetch failed");
+  if (roleDataScopesRes.error && !isMissingRelationError(roleDataScopesRes.error)) {
+    ensureSupabaseSuccess(roleDataScopesRes, "Role data scopes fetch failed");
+  }
+  if (userPermissionsRes.error && !isMissingRelationError(userPermissionsRes.error)) {
+    ensureSupabaseSuccess(userPermissionsRes, "User permissions fetch failed");
+  }
+  if (appSettingsRes.error && !isMissingRelationError(appSettingsRes.error)) {
+    ensureSupabaseSuccess(appSettingsRes, "App settings fetch failed");
+  }
 
   let clientFields = [];
   try {
@@ -390,6 +719,8 @@ async function fetchBootstrapData() {
     clientFields = DEFAULT_CLIENT_FIELDS;
   }
 
+  const allReports = (reportsRes.data || []).map(mapReport);
+
   const raw = {
     companies: (companiesRes.data || []).map(mapCompany),
     departments: (departmentsRes.data || []).map(mapDepartment),
@@ -399,10 +730,21 @@ async function fetchBootstrapData() {
     clients: (clientsRes.data || []).map(mapClient),
     users: (usersRes.data || []).map(mapUser),
     activity: (activityRes.data || []).map(mapActivity),
-    reports: (reportsRes.data || []).map(mapReport),
+    reports: allReports.filter((report) => String(report.type || "") !== ACCESS_CONFIG_REPORT_TYPE),
     rolePermissions: (rolePermissionsRes.data || []).map(mapRolePermission),
+    roleDataScopes: roleDataScopesRes.error ? [] : (roleDataScopesRes.data || []).map(mapRoleDataScope),
+    userPermissions: userPermissionsRes.error ? [] : (userPermissionsRes.data || []).map(mapUserPermission),
+    roles: rolesRes.error ? [] : (rolesRes.data || []).map(mapRole),
+    permissionModules: permissionModulesRes.error ? [] : (permissionModulesRes.data || []).map(mapPermissionModule),
+    appSettings: appSettingsRes.error ? [] : (appSettingsRes.data || []).map(mapAppSetting),
+    accessConfigReportId: "",
     clientFields,
   };
+
+  const appSettings = raw.appSettings.reduce((settings, row) => {
+    settings[row.key] = row.value;
+    return settings;
+  }, {});
 
   const normalized = normalizeData(raw);
   return {
@@ -414,6 +756,12 @@ async function fetchBootstrapData() {
     activity: raw.activity,
     reports: raw.reports,
     rolePermissions: raw.rolePermissions,
+    roleDataScopes: raw.roleDataScopes,
+    userPermissions: raw.userPermissions,
+    roles: raw.roles,
+    permissionModules: raw.permissionModules,
+    appSettings,
+    accessConfigReportId: raw.accessConfigReportId,
     clientFields: raw.clientFields,
   };
 }
@@ -456,7 +804,28 @@ function splitClientPayloadByStorage(payload) {
       customPayload[key] = value;
     }
   });
+
+  const resolvedClientName = String(dbPayload.client_name || dbPayload.full_name || "").trim();
+  if (resolvedClientName) {
+    dbPayload.client_name = resolvedClientName;
+    dbPayload.full_name = resolvedClientName;
+  }
+
+  const resolvedClientCode = String(dbPayload.client_code || "").trim();
+  if (!resolvedClientCode) {
+    const nameToken = resolvedClientName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "")
+      .slice(0, 6);
+    const fallbackToken = createId().replace(/-/g, "").slice(0, 6).toUpperCase();
+    dbPayload.client_code = nameToken || fallbackToken;
+  }
+
   return { dbPayload, customPayload };
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
 }
 
 export default function App() {
@@ -473,7 +842,9 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [activeClientProfileId, setActiveClientProfileId] = useState("");
+  const [clientProfileMode, setClientProfileMode] = useState("view");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const supabaseHost = useMemo(() => {
@@ -505,6 +876,10 @@ export default function App() {
   }
 
   async function logActivity(action, entity, details, options = {}) {
+    if (!options.force && !isActivityLoggingEnabledFromSettings(data.appSettings)) {
+      return;
+    }
+
     const actorName = currentUserProfile?.full_name || session?.user?.email || authEmail.trim() || "Unknown";
     const payloadDetails = {
       message: String(details || ""),
@@ -635,76 +1010,52 @@ export default function App() {
     { label: "Clients", value: data.clients.length },
   ];
   const currentUserProfile = useMemo(() => {
-    const email = String(session?.user?.email || "").toLowerCase();
-    return data.users.find((user) => String(user.email || "").toLowerCase() === email) || null;
-  }, [data.users, session?.user?.email]);
-  const currentRole = currentUserProfile?.role || (session ? "super_admin" : "viewer");
-  const rolePermissions = useMemo(() => {
-    const matrix = {
-      super_admin: { clients: { view: true, create: true, edit: true, delete: true }, users: { view: true, create: true, edit: true, delete: true } },
-      admin: { clients: { view: true, create: true, edit: true, delete: true }, users: { view: true, create: true, edit: true, delete: false } },
-      manager: { clients: { view: true, create: true, edit: true, delete: false }, users: { view: true, create: false, edit: false, delete: false } },
-      editor: { clients: { view: true, create: true, edit: true, delete: false }, users: { view: false, create: false, edit: false, delete: false } },
-      viewer: { clients: { view: true, create: false, edit: false, delete: false }, users: { view: false, create: false, edit: false, delete: false } },
-    };
-    const expanded = JSON.parse(JSON.stringify(matrix));
-    (data.rolePermissions || []).forEach((row) => {
-      if (!expanded[row.role]) expanded[row.role] = {};
-      expanded[row.role][row.module] = {
-        view: !!row.can_view,
-        create: !!row.can_create,
-        edit: !!row.can_edit,
-        delete: !!row.can_delete,
-      };
-    });
-    return expanded[currentRole] || expanded.viewer;
-  }, [currentRole, data.rolePermissions]);
+    const profile = findUserProfileInData(data.users, session?.user, session?.user?.email);
+    return profile ? { ...profile, role: normalizeRoleName(profile.role) } : null;
+  }, [data.users, session?.user]);
+  const roleTableRoles = useMemo(() => {
+    return getRoleNamesFromData(data);
+  }, [data.roles]);
+  const dynamicRoles = useMemo(() => {
+    const permissionRoles = (data.rolePermissions || []).map((row) => normalizeRoleName(row.role)).filter(Boolean);
+    const scopeRoles = (data.roleDataScopes || []).map((row) => normalizeRoleName(row.role)).filter(Boolean);
+    return Array.from(new Set([...roleTableRoles, ...permissionRoles, ...scopeRoles]));
+  }, [data.roleDataScopes, data.rolePermissions, roleTableRoles]);
+  const dynamicPermissionModules = useMemo(() => {
+    const dbModules = (data.permissionModules || []).map((row) => String(row.name || "").trim()).filter(Boolean);
+    const permissionModules = (data.rolePermissions || []).map((row) => String(row.module || "").trim()).filter(Boolean);
+    const scopeModules = (data.roleDataScopes || []).map((row) => String(row.module || "").trim()).filter(Boolean);
+    const overrideModules = (data.userPermissions || []).map((row) => String(row.module || "").trim()).filter(Boolean);
+    return Array.from(new Set([...DEFAULT_PERMISSION_MODULES, ...dbModules, ...permissionModules, ...scopeModules, ...overrideModules]));
+  }, [data.permissionModules, data.roleDataScopes, data.rolePermissions, data.userPermissions]);
+  const currentRole = normalizeRoleName(currentUserProfile?.role || "");
   const allPermissionsByRole = useMemo(() => {
-    const roles = ["super_admin", "admin", "manager", "editor", "viewer"];
-    const modules = ["clients", "users", "roles", "admin", "reports", "activity", "companies", "departments", "templates", "issue", "register"];
-    const output = {};
-    roles.forEach((role) => {
-      output[role] = {};
-      modules.forEach((module) => {
-        output[role][module] = { view: role === "super_admin", create: role === "super_admin", edit: role === "super_admin", delete: role === "super_admin" };
-      });
-    });
-    (data.rolePermissions || []).forEach((row) => {
-      if (!output[row.role]) output[row.role] = {};
-      output[row.role][row.module] = {
-        view: !!row.can_view,
-        create: !!row.can_create,
-        edit: !!row.can_edit,
-        delete: !!row.can_delete,
-      };
-    });
-    return output;
-  }, [data.rolePermissions]);
+    return buildRolePermissionMatrix(dynamicRoles, dynamicPermissionModules, data.rolePermissions);
+  }, [data.rolePermissions, dynamicPermissionModules, dynamicRoles]);
+  const rolePermissions = useMemo(() => {
+    const base = allPermissionsByRole[currentRole] || {};
+    const overrides = currentUserProfile?.id
+      ? (data.userPermissions || []).filter((row) => row.user_id === currentUserProfile.id)
+      : [];
+    return applyUserPermissionOverrides(base, overrides);
+  }, [allPermissionsByRole, currentRole, currentUserProfile?.id, data.userPermissions]);
+  const activityLoggingEnabled = isActivityLoggingEnabledFromSettings(data.appSettings);
+  const canManageActivityLogging = hasFullAccessRole(currentRole) || !!rolePermissions.activity_settings?.edit;
+  const canManageAccess = hasFullAccessRole(currentRole);
   const visibleViews = useMemo(() => {
     return VIEWS.filter((view) => {
-      if (view.id === "users" || view.id === "roles" || view.id === "admin") {
-        return rolePermissions.users.view;
-      }
-      if (view.id === "clients-create" || view.id === "clients-all" || view.id === "clients-profile") {
-        return rolePermissions.clients.view;
-      }
-      if (view.id === "activity") {
+      if (view.id === "admin" && canManageActivityLogging) {
         return true;
       }
-      return true;
+      return rolePermissions[view.id]?.view !== false;
     });
-  }, [rolePermissions]);
+  }, [canManageActivityLogging, rolePermissions]);
+  const navigableViews = useMemo(() => visibleViews.filter((view) => view.showInNav !== false), [visibleViews]);
   useEffect(() => {
     if (!visibleViews.some((view) => view.id === activeView)) {
       setActiveView("dashboard");
     }
   }, [visibleViews, activeView]);
-
-  useEffect(() => {
-    if (activeView === "clients-profile" && !activeClientProfileId && data.clients.length) {
-      setActiveClientProfileId(data.clients[0].id);
-    }
-  }, [activeView, activeClientProfileId, data.clients]);
 
   function notify(message) {
     setToast(message);
@@ -712,12 +1063,14 @@ export default function App() {
 
   async function addCompany(form) {
     try {
+      const companyCode = normalizeCompanyCode(form.shortCode, form.name);
       const result = await supabase
         .from("companies")
         .insert({
           id: createId(),
           name: String(form.name || "").trim(),
-          short_code: String(form.shortCode || "").trim().toUpperCase(),
+          short_code: companyCode,
+          code: companyCode,
           address: String(form.address || "").trim(),
           phone: String(form.phone || "").trim(),
           email: String(form.email || "").trim(),
@@ -740,11 +1093,13 @@ export default function App() {
 
   async function updateCompany(form) {
     try {
+      const companyCode = normalizeCompanyCode(form.shortCode, form.name);
       const result = await supabase
         .from("companies")
         .update({
           name: String(form.name || "").trim(),
-          short_code: String(form.shortCode || "").trim().toUpperCase(),
+          short_code: companyCode,
+          code: companyCode,
           address: String(form.address || "").trim(),
           phone: String(form.phone || "").trim(),
           email: String(form.email || "").trim(),
@@ -1014,6 +1369,50 @@ export default function App() {
     }
   }
 
+  async function addTemplateType(name) {
+    try {
+      const typeRef = await ensureTemplateType(name);
+      await refreshData();
+      notify(`Template type "${typeRef.name}" is ready`);
+      return mapTemplateType(typeRef);
+    } catch (error) {
+      notify(`Template type save failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  async function deleteTemplateType(templateTypeId) {
+    const target = data.templateTypes.find((type) => type.id === templateTypeId);
+    if (!target) {
+      return false;
+    }
+
+    const templateCount = data.templates.filter((template) => template.templateTypeId === templateTypeId || template.type === target.name).length;
+    const letterCount = data.letters.filter((letter) => letter.templateTypeId === templateTypeId).length;
+    const warningParts = [];
+    if (templateCount) warningParts.push(`${templateCount} templates`);
+    if (letterCount) warningParts.push(`${letterCount} issued letters`);
+    const warningSuffix = warningParts.length ? `\nLinked records will keep their saved content, but the type link will be removed: ${warningParts.join(", ")}.` : "";
+
+    if (!window.confirm(`Delete template type "${target.name}"?${warningSuffix}`)) {
+      return false;
+    }
+
+    try {
+      const result = await supabase.from("template_types").delete().eq("id", templateTypeId);
+      ensureSupabaseSuccess(result, "Template type delete failed");
+      await logActivity("DELETE_TEMPLATE_TYPE", "templates", `Deleted template type ${target.name}`, {
+        entityId: templateTypeId,
+      });
+      await refreshData();
+      notify("Template type deleted");
+      return true;
+    } catch (error) {
+      notify(`Template type delete failed: ${error.message}`);
+      return false;
+    }
+  }
+
   async function deleteTemplate(templateId) {
     const target = data.templates.find((template) => template.id === templateId);
     if (!target) {
@@ -1049,7 +1448,7 @@ export default function App() {
     }
   }
 
-  async function duplicateTemplate(templateId) {
+  async function duplicateTemplate(templateId, options = {}) {
     const source = data.templates.find((template) => template.id === templateId);
     if (!source) {
       return false;
@@ -1059,10 +1458,11 @@ export default function App() {
     const existingNames = new Set(
       data.templates.map((template) => String(template.name || "").trim().toLowerCase()).filter(Boolean),
     );
-    let duplicateName = `${baseName} Copy`;
+    const requestedName = String(options.name || "").trim();
+    let duplicateName = requestedName || `${baseName} Copy`;
     let suffix = 2;
     while (existingNames.has(duplicateName.toLowerCase())) {
-      duplicateName = `${baseName} Copy ${suffix}`;
+      duplicateName = requestedName ? `${requestedName} ${suffix}` : `${baseName} Copy ${suffix}`;
       suffix += 1;
     }
 
@@ -1095,7 +1495,7 @@ export default function App() {
         setTemplateEditorTargetId(saved.id);
       }
       notify(saved ? `Template duplicated as "${duplicateName}"` : "Template duplicated, but verify DB sync");
-      return true;
+      return saved || true;
     } catch (error) {
       notify(`Template duplicate failed: ${error.message}`);
       return false;
@@ -1154,9 +1554,18 @@ export default function App() {
     setIssueDraft((current) => {
       const currentTemplate = data.templates.find((template) => template.id === current.templateId);
       const currentDefaultSubject = currentTemplate?.defaultSubject || currentTemplate?.name || "";
-      const nextDraft = createIssueDraft(data, { ...current, ...patch });
+      const nextRawDraft = { ...current, ...patch };
 
-      if ((patch.companyId || patch.departmentId || patch.templateId) && (!current.subject || current.subject === currentDefaultSubject)) {
+      if (Object.prototype.hasOwnProperty.call(patch, "clientId")) {
+        const nextClient = data.clients.find((client) => client.id === (patch.clientId || ""));
+        if (nextClient) {
+          Object.assign(nextRawDraft, buildIssueDraftPatchFromClient(nextClient));
+        }
+      }
+
+      const nextDraft = createIssueDraft(data, nextRawDraft);
+
+      if ((patch.companyId || patch.departmentId || patch.letterType || patch.templateId) && (!current.subject || current.subject === currentDefaultSubject)) {
         const nextTemplate = data.templates.find((template) => template.id === nextDraft.templateId);
         nextDraft.subject = nextTemplate?.defaultSubject || nextTemplate?.name || "";
       }
@@ -1276,8 +1685,14 @@ export default function App() {
         joiningDate: issueDraft.employeeJoiningDate || "",
         reportingManager: issueDraft.employeeReportingManager || "",
       };
+      const syncedTemplateType = await ensureIssueReferencesPersisted({
+        company,
+        department,
+        template,
+        templateTypeName: template.type || template.name,
+      });
       const templateTypeCode = normalizeTemplateTypeCode(template.type || template.name);
-      const templateTypeId = data.templateTypes.find((item) => item.code === templateTypeCode)?.id || template.templateTypeId || null;
+      const templateTypeId = syncedTemplateType?.id || data.templateTypes.find((item) => item.code === templateTypeCode)?.id || template.templateTypeId || null;
 
       if (editingLetter) {
         const finalLetterNo = normalizedLetterNo(manualLetterNo || editingLetter.letterNo || "");
@@ -1324,6 +1739,7 @@ export default function App() {
             rendered_body: renderedValues.body_text,
             pdf_file_name: pdfFileName,
             pdf_storage_path: `storage/pdfs/${pdfFileName}`,
+            custom_fields_json: customFieldValues,
             template_snapshot_json: {
               id: template.id,
               name: template.name,
@@ -1332,7 +1748,7 @@ export default function App() {
               defaultSubject: template.defaultSubject || "",
               bodyTemplate: template.bodyTemplate || "",
               letterNoPattern: template.letterNoPattern || "",
-              design: template.design || {},
+              design: normalizeTemplateDesignForIssueType(template.design, issueDraft.letterType || template.type || template.name),
               customFieldValues,
               employeeData,
               templateTypeId,
@@ -1465,6 +1881,7 @@ export default function App() {
         rendered_body: renderedValues.body_text,
         pdf_file_name: pdfFileName,
         pdf_storage_path: `storage/pdfs/${pdfFileName}`,
+        custom_fields_json: customFieldValues,
         template_snapshot_json: {
           id: template.id,
           name: template.name,
@@ -1473,7 +1890,7 @@ export default function App() {
           defaultSubject: template.defaultSubject || "",
           bodyTemplate: template.bodyTemplate || "",
           letterNoPattern: template.letterNoPattern || "",
-          design: template.design || {},
+          design: normalizeTemplateDesignForIssueType(template.design, issueDraft.letterType || template.type || template.name),
           customFieldValues,
           employeeData,
           templateTypeId,
@@ -1584,20 +2001,95 @@ export default function App() {
   }
 
   async function signIn() {
+    if (authSubmitting) {
+      return;
+    }
     if (!authEmail.trim() || !authPassword) {
       notify("Enter email and password.");
       return;
     }
-    const { error } = await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword });
-    if (error) notify(`Sign in failed: ${error.message}`);
-    else {
-      const matchedUser = data.users.find((user) => String(user.email || "").toLowerCase() === String(authEmail || "").trim().toLowerCase());
+    setAuthSubmitting(true);
+    try {
+      const email = authEmail.trim().toLowerCase();
+      const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
+      if (error) {
+        const raw = String(error.message || "").toLowerCase();
+        if (raw.includes("email not confirmed")) {
+          notify("Sign in failed: Email is not confirmed. Check inbox and confirm first.");
+        } else if (raw.includes("invalid login credentials")) {
+          notify("Sign in failed: Invalid email/password, or this user was only added to the app DB and not Supabase Auth.");
+        } else {
+          notify(`Sign in failed: ${error.message}`);
+        }
+        return;
+      }
+
+      let nextData = await fetchBootstrapData();
+      let matchedUser = findUserProfileInData(nextData.users, authData?.user, email);
+      let profileResult = matchedUser ? { data: matchedUser, error: null } : await findUserProfileByEmail(email);
+      if (profileResult.error) {
+        await supabase.auth.signOut();
+        notify(`Sign in failed: User profile lookup failed (${profileResult.error.message}).`);
+        return;
+      }
+      if (!profileResult.data) {
+        const isFirstVisibleUser = (nextData.users || []).length === 0;
+        if (!isFirstVisibleUser) {
+          await supabase.auth.signOut();
+          notify("Sign in failed: No app user profile was found for this email. Create the user in the portal and assign a role first.");
+          return;
+        }
+        const createProfileResult = await supabase
+          .from("users")
+          .upsert(
+            {
+              id: authData?.user?.id || createId(),
+              email,
+              full_name: authData?.user?.user_metadata?.full_name || email,
+              role: FULL_ACCESS_ROLE,
+              active: true,
+            },
+            { onConflict: "email" },
+          )
+          .select("id, email, full_name, role, active")
+          .single();
+
+        if (createProfileResult.error) {
+          await supabase.auth.signOut();
+          notify(`Sign in failed: Auth login worked, but app profile could not be created (${createProfileResult.error.message}).`);
+          return;
+        }
+
+        profileResult = createProfileResult;
+        nextData = await fetchBootstrapData();
+      }
+      if (profileResult.data.active === false) {
+        await supabase.auth.signOut();
+        notify("Sign in failed: This user profile is inactive.");
+        return;
+      }
+      if (!normalizeRoleName(profileResult.data.role)) {
+        await supabase.auth.signOut();
+        notify("Sign in failed: This user profile has no role assigned. Assign a portal role first.");
+        return;
+      }
+      const freshRoleTableRoles = getRoleNamesFromData(nextData);
+      if (!freshRoleTableRoles.includes(normalizeRoleName(profileResult.data.role))) {
+        await supabase.auth.signOut();
+        notify(`Sign in failed: Role "${profileResult.data.role}" is not in the roles table. Create it in Roles first.`);
+        return;
+      }
+
+      matchedUser = findUserProfileInData(nextData.users, authData?.user, email) || profileResult.data;
       await logActivity("LOGIN", "auth", "User signed in", {
         actorId: matchedUser?.id || null,
       });
+      setData(nextData);
       setAuthPassword("");
       setActiveView("dashboard");
-      notify("Signed in");
+      notify(`Signed in as ${normalizeRoleName(matchedUser?.role || profileResult.data.role)}`);
+    } finally {
+      setAuthSubmitting(false);
     }
   }
 
@@ -1620,26 +2112,30 @@ export default function App() {
   }
 
   async function addClient(form) {
-    if (!rolePermissions.clients.create) {
+   if (!rolePermissions["clients-create"]?.create) {
       notify("You do not have permission to create clients.");
       return false;
     }
     try {
       const { dbPayload, customPayload } = splitClientPayloadByStorage(form);
+      const clientDisplayName = dbPayload.client_name || dbPayload.full_name || form.company || form.email || "Client";
       const payload = {
         ...dbPayload,
         custom_fields_json: customPayload,
         created_by: currentUserProfile?.id || null,
         updated_by: currentUserProfile?.id || null,
       };
-      const result = await supabase.from("clients").insert(payload).select("id").single();
+      const result = await supabase.from("clients").insert(payload);
       ensureSupabaseSuccess(result, "Client save failed");
-      await logActivity("CREATE_CLIENT", "clients", `Created client: ${form.client_name || form.company || form.email}`, {
-        entityId: result.data.id,
-        clientId: result.data.id,
-        clientName: form.client_name || form.company || "",
+      const nextData = await refreshData();
+      const savedClient =
+        nextData.clients.find((client) => String(client.email || "").trim().toLowerCase() === String(payload.email || "").trim().toLowerCase())
+        || nextData.clients.find((client) => String(client.client_name || "").trim() === String(clientDisplayName || "").trim());
+      await logActivity("CREATE_CLIENT", "clients", `Created client: ${clientDisplayName}`, {
+        entityId: savedClient?.id || null,
+        clientId: savedClient?.id || null,
+        clientName: clientDisplayName,
       });
-      await refreshData();
       notify("Client added");
       return true;
     } catch (error) {
@@ -1649,7 +2145,7 @@ export default function App() {
   }
 
   async function deleteClient(id) {
-    if (!rolePermissions.clients.delete) {
+    if (!rolePermissions["clients-all"]?.delete) {
       notify("You do not have permission to delete clients.");
       return false;
     }
@@ -1671,7 +2167,8 @@ export default function App() {
   }
 
   async function updateClient(id, patch) {
-    if (!rolePermissions.clients.edit) {
+    if (!rolePermissions["clients-all"]?.edit) {
+
       notify("You do not have permission to edit clients.");
       return false;
     }
@@ -1703,8 +2200,8 @@ export default function App() {
   }
 
   async function addClientField(fieldDraft) {
-    if (currentRole !== "super_admin") {
-      notify("Only super admin can create client fields.");
+    if (!(hasFullAccessRole(currentRole) || rolePermissions.client_fields?.create)) {
+      notify("You do not have permission to create client fields.");
       return false;
     }
     const normalized = normalizeClientFieldDraft(fieldDraft);
@@ -1734,8 +2231,8 @@ export default function App() {
   }
 
   async function updateClientField(fieldId, patch) {
-    if (currentRole !== "super_admin") {
-      notify("Only super admin can edit client fields.");
+    if (!(hasFullAccessRole(currentRole) || rolePermissions.client_fields?.edit)) {
+      notify("You do not have permission to edit client fields.");
       return false;
     }
     const existing = data.clientFields.find((field) => field.id === fieldId);
@@ -1754,7 +2251,7 @@ export default function App() {
       }
     }
     try {
-      const result = await supabase
+      const query = supabase
         .from("client_fields")
         .update({
           label: normalized.label,
@@ -1763,10 +2260,10 @@ export default function App() {
           is_required: normalized.is_required,
           is_active: normalized.is_active,
           sort_order: normalized.sort_order,
-        })
-        .eq("id", fieldId);
+        });
+      const result = isUuid(fieldId) ? await query.eq("id", fieldId) : await query.eq("field_key", existing.field_key);
       ensureSupabaseSuccess(result, "Client field update failed");
-      await logActivity("UPDATE_CLIENT_FIELD", "client_fields", `Updated client field ${existing.field_key}`, { entityId: fieldId });
+      await logActivity("UPDATE_CLIENT_FIELD", "client_fields", `Updated client field ${existing.field_key}`, { entityId: isUuid(fieldId) ? fieldId : null });
       await refreshData();
       notify("Client field updated");
       return true;
@@ -1777,8 +2274,8 @@ export default function App() {
   }
 
   async function deleteClientField(fieldId) {
-    if (currentRole !== "super_admin") {
-      notify("Only super admin can delete client fields.");
+    if (!(hasFullAccessRole(currentRole) || rolePermissions.client_fields?.delete)) {
+      notify("You do not have permission to delete client fields.");
       return false;
     }
     const target = data.clientFields.find((field) => field.id === fieldId);
@@ -1790,9 +2287,10 @@ export default function App() {
       return false;
     }
     try {
-      const result = await supabase.from("client_fields").delete().eq("id", fieldId);
+      const query = supabase.from("client_fields").delete();
+      const result = isUuid(fieldId) ? await query.eq("id", fieldId) : await query.eq("field_key", target.field_key);
       ensureSupabaseSuccess(result, "Client field delete failed");
-      await logActivity("DELETE_CLIENT_FIELD", "client_fields", `Deleted client field ${target.field_key}`, { entityId: fieldId });
+      await logActivity("DELETE_CLIENT_FIELD", "client_fields", `Deleted client field ${target.field_key}`, { entityId: isUuid(fieldId) ? fieldId : null });
       await refreshData();
       notify("Client field deleted");
       return true;
@@ -1808,10 +2306,90 @@ export default function App() {
       return false;
     }
     try {
-      const result = await supabase.from("users").insert(form).select("id").single();
+      const email = String(form?.email || "").trim().toLowerCase();
+      const password = String(form?.password || "");
+      const full_name = String(form?.full_name || "").trim();
+      const requestedRole = normalizeRoleName(form?.role || "");
+      const active = form?.active !== false;
+      const shouldCreateLogin = form?.createLogin !== false;
+
+      if (!email) {
+        notify("Email is required.");
+        return false;
+      }
+      if (shouldCreateLogin && password.length < 6) {
+        notify("Password must be at least 6 characters.");
+        return false;
+      }
+      if (!requestedRole) {
+        notify("Role is required.");
+        return false;
+      }
+      if (!roleTableRoles.includes(requestedRole)) {
+        notify("Selected role does not exist in the role table.");
+        return false;
+      }
+
+      const existingUser = (data.users || []).find((user) => String(user.email || "").trim().toLowerCase() === email);
+      const isCurrentSessionUser = String(session?.user?.email || "").trim().toLowerCase() === email;
+      const role = isCurrentSessionUser && existingUser && hasFullAccessRole(existingUser.role)
+        ? FULL_ACCESS_ROLE
+        : requestedRole;
+
+      let authResult = { data: null, error: null };
+      if (shouldCreateLogin) {
+        const authClient = createIsolatedAuthClient();
+        authResult = await authClient.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name,
+              role,
+            },
+          },
+        });
+        if (authResult.error) {
+          const raw = String(authResult.error.message || "").toLowerCase();
+          if (!raw.includes("already registered") && !raw.includes("already exists")) {
+            notify(`Auth user create failed: ${authResult.error.message}`);
+            return false;
+          }
+        }
+      }
+
+      const profilePayload = {
+        email,
+        full_name,
+        role,
+        active,
+      };
+      const result = existingUser
+        ? await supabase
+          .from("users")
+          .update(profilePayload)
+          .eq("id", existingUser.id)
+          .select("id")
+          .single()
+        : await supabase
+          .from("users")
+          .insert({
+            id: authResult.data?.user?.id || createId(),
+            ...profilePayload,
+          })
+          .select("id")
+          .single();
       ensureSupabaseSuccess(result, "User save failed");
       await refreshData();
-      notify("User added");
+      if (existingUser) {
+        notify(shouldCreateLogin ? "User login repaired and profile updated." : "User profile updated.");
+      } else if (authResult.data?.session) {
+        notify("User login and profile added.");
+      } else if (!shouldCreateLogin) {
+        notify("User profile added. This user cannot sign in until a Supabase Auth login is created.");
+      } else {
+        notify("User login and profile added. If email confirmation is enabled, confirm the email before signing in.");
+      }
       return true;
     } catch (error) {
       notify(`User save failed: ${error.message}`);
@@ -1824,6 +2402,22 @@ export default function App() {
       notify("You do not have permission to edit users.");
       return false;
     }
+    const targetUser = (data.users || []).find((user) => user.id === id);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+    if (id === currentUserProfile?.id && active === false) {
+      notify("You cannot disable your own account while signed in.");
+      return false;
+    }
+    if (hasFullAccessRole(targetUser.role) && active === false) {
+      const activeAdmins = (data.users || []).filter((user) => user.active !== false && hasFullAccessRole(user.role));
+      if (activeAdmins.length <= 1) {
+        notify("At least one active admin user is required.");
+        return false;
+      }
+    }
     try {
       const result = await supabase.from("users").update({ active }).eq("id", id);
       ensureSupabaseSuccess(result, "User update failed");
@@ -1832,6 +2426,377 @@ export default function App() {
       return true;
     } catch (error) {
       notify(`User update failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function updateUser(id, patch) {
+    if (!rolePermissions.users.edit) {
+      notify("You do not have permission to edit users.");
+      return false;
+    }
+    const targetUser = (data.users || []).find((user) => user.id === id);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+
+    const nextRole = normalizeRoleName(patch?.role || "");
+    const nextActive = patch?.active !== false;
+    const full_name = String(patch?.full_name || "").trim();
+
+    if (!nextRole) {
+      notify("Role is required.");
+      return false;
+    }
+    if (!roleTableRoles.includes(nextRole)) {
+      notify("Selected role does not exist in the role table.");
+      return false;
+    }
+    if (id === currentUserProfile?.id && (!nextActive || !hasFullAccessRole(nextRole))) {
+      notify("You cannot remove admin access or disable your own signed-in account.");
+      return false;
+    }
+    if (hasFullAccessRole(targetUser.role) && (!nextActive || !hasFullAccessRole(nextRole))) {
+      const otherActiveAdmins = (data.users || []).filter((user) => user.id !== id && user.active !== false && hasFullAccessRole(user.role));
+      if (!otherActiveAdmins.length) {
+        notify("At least one active admin user is required.");
+        return false;
+      }
+    }
+
+    try {
+      const result = await supabase
+        .from("users")
+        .update({ full_name, role: nextRole, active: nextActive })
+        .eq("id", id);
+      ensureSupabaseSuccess(result, "User update failed");
+      await logActivity("UPDATE_USER", "users", `Updated user ${targetUser.email || targetUser.full_name || id}`, { entityId: id });
+      await refreshData();
+      notify("User updated");
+      return true;
+    } catch (error) {
+      notify(`User update failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function deleteUser(id) {
+    if (!rolePermissions.users.delete) {
+      notify("You do not have permission to delete users.");
+      return false;
+    }
+    const targetUser = (data.users || []).find((user) => user.id === id);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+    if (id === currentUserProfile?.id) {
+      notify("You cannot delete your own signed-in account.");
+      return false;
+    }
+    if (hasFullAccessRole(targetUser.role)) {
+      const otherActiveAdmins = (data.users || []).filter((user) => user.id !== id && user.active !== false && hasFullAccessRole(user.role));
+      if (!otherActiveAdmins.length) {
+        notify("At least one active admin user is required.");
+        return false;
+      }
+    }
+    const label = targetUser.email || targetUser.full_name || id;
+    if (!window.confirm(`Delete user "${label}"? This removes the app profile and permission overrides.`)) {
+      return false;
+    }
+
+    try {
+      const result = await supabase.rpc("admin_delete_user", { target_user_id: id });
+      ensureSupabaseSuccess(result, "User delete failed");
+      await logActivity("DELETE_USER", "users", `Deleted user ${label}`, { entityId: id });
+      await refreshData();
+      notify("User deleted from app users and Supabase Auth.");
+      return true;
+    } catch (error) {
+      notify(`User delete failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function resetUserPassword(id, form = {}) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can reset passwords.");
+      return false;
+    }
+    const targetUser = (data.users || []).find((user) => user.id === id);
+    const email = String(targetUser?.email || "").trim().toLowerCase();
+    if (!targetUser || !email) {
+      notify("User email not found.");
+      return false;
+    }
+    const previousPassword = String(form?.previousPassword || "");
+    const newPassword = String(form?.newPassword || "");
+    const confirmPassword = String(form?.confirmPassword || "");
+    if (!previousPassword) {
+      notify("Previous password is required.");
+      return false;
+    }
+    if (newPassword.length < 6) {
+      notify("Password must be at least 6 characters.");
+      return false;
+    }
+    if (newPassword !== confirmPassword) {
+      notify("New password and confirm password do not match.");
+      return false;
+    }
+
+    try {
+      const result = await supabase.rpc("admin_reset_user_password", {
+        target_user_id: id,
+        previous_password: previousPassword,
+        new_password: newPassword,
+      });
+      ensureSupabaseSuccess(result, "Password reset failed");
+      await logActivity("RESET_USER_PASSWORD", "auth", `Admin reset password for ${email}`, { entityId: id });
+      notify("Password updated.");
+      return true;
+    } catch (error) {
+      notify(`Password reset failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function toggleUserPermission(userId, module, action, value) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change user permissions.");
+      return false;
+    }
+    const targetUser = (data.users || []).find((user) => user.id === userId);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+    const normalizedRole = normalizeRoleName(targetUser.role);
+    const existing = (data.userPermissions || []).find((row) => row.user_id === userId && row.module === module);
+    const roleDefault = allPermissionsByRole[normalizedRole]?.[module] || { view: false, create: false, edit: false, delete: false };
+    const patch = {
+      user_id: userId,
+      module,
+      can_view: existing?.can_view ?? roleDefault.view,
+      can_create: existing?.can_create ?? roleDefault.create,
+      can_edit: existing?.can_edit ?? roleDefault.edit,
+      can_delete: existing?.can_delete ?? roleDefault.delete,
+      updated_at: new Date().toISOString(),
+    };
+    patch[`can_${action}`] = value;
+    const optimisticPatch = { id: existing?.id || createId(), ...patch };
+
+    setData((current) => ({
+      ...current,
+      userPermissions: existing
+        ? (current.userPermissions || []).map((row) => (row.user_id === userId && row.module === module ? optimisticPatch : row))
+        : [...(current.userPermissions || []), optimisticPatch],
+    }));
+
+    try {
+      const result = await supabase.from("user_permissions").upsert(patch, { onConflict: "user_id,module" }).select("*").single();
+      const savedPermission = ensureSupabaseSuccess(result, "User permission save failed");
+      setData((current) => ({
+        ...current,
+        userPermissions: (current.userPermissions || []).map((row) => (row.user_id === userId && row.module === module ? savedPermission : row)),
+      }));
+      await logActivity("UPDATE_USER_PERMISSION", "user_permissions", `${targetUser.email || targetUser.full_name || userId} -> ${module}.${action} = ${value}`, {
+        entityId: savedPermission?.id || existing?.id || null,
+      });
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`User permission save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function saveRoleAccess(role, permissionRows = [], scopeRows = []) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change access matrix.");
+      return false;
+    }
+    const normalizedRole = normalizeRoleName(role);
+    if (hasFullAccessRole(normalizedRole)) {
+      notify("Admin always has full access.");
+      return false;
+    }
+
+    const patches = (permissionRows || []).map((row) => ({
+      role: normalizedRole,
+      module: String(row.module || "").trim(),
+      can_view: !!row.can_view,
+      can_create: !!row.can_create,
+      can_edit: !!row.can_edit,
+      can_delete: !!row.can_delete,
+    })).filter((row) => row.module);
+
+    const cleanScopeRows = (scopeRows || []).map((row) => ({
+      role: normalizedRole,
+      module: String(row.module || "").trim(),
+      scope_type: ["own_data", "own_department", "selected_departments", "all_departments"].includes(row.scope_type) ? row.scope_type : "own_department",
+      department_names: row.scope_type === "selected_departments" && Array.isArray(row.department_names) ? row.department_names : [],
+      updated_at: new Date().toISOString(),
+    })).filter((row) => row.module);
+
+    try {
+      let savedPermissions = patches;
+      let savedScopeRows = cleanScopeRows;
+      const roleResult = await supabase.from("roles").upsert({ name: normalizedRole }, { onConflict: "name" });
+      ensureSupabaseSuccess(roleResult, "Role save failed");
+
+      const permissionDeleteResult = await supabase.from("role_permissions").delete().eq("role", normalizedRole);
+      ensureSupabaseSuccess(permissionDeleteResult, "Role permission cleanup failed");
+      if (patches.length) {
+        const permissionSaveResult = await supabase.from("role_permissions").insert(patches).select("*");
+        savedPermissions = ensureSupabaseSuccess(permissionSaveResult, "Role permission save failed") || patches;
+      }
+
+      const scopeDeleteResult = await supabase.from("role_data_scopes").delete().eq("role", normalizedRole);
+      ensureSupabaseSuccess(scopeDeleteResult, "Role data scope cleanup failed");
+      if (cleanScopeRows.length) {
+        const result = await supabase.from("role_data_scopes").insert(cleanScopeRows).select("*");
+        savedScopeRows = ensureSupabaseSuccess(result, "Role data scope save failed") || cleanScopeRows;
+      }
+      setData((current) => ({
+        ...current,
+        roles: Array.from(new Set([...(current.roles || []).map((row) => row.name), normalizedRole])).map((name) => ({ id: name, name })),
+        rolePermissions: [
+          ...(current.rolePermissions || []).filter((row) => normalizeRoleName(row.role) !== normalizedRole),
+          ...savedPermissions,
+        ],
+        roleDataScopes: [
+          ...(current.roleDataScopes || []).filter((row) => normalizeRoleName(row.role) !== normalizedRole),
+          ...savedScopeRows,
+        ],
+      }));
+      await logActivity("UPDATE_ROLE_ACCESS", "role_permissions", `Saved permissions and scopes for ${normalizedRole}`);
+      notify("Role access saved.");
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`Role access save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function saveUserPermissionOverrides(userId, overrideRows = []) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change user permissions.");
+      return false;
+    }
+    const targetUser = (data.users || []).find((user) => user.id === userId);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+    if (hasFullAccessRole(targetUser.role)) {
+      notify("Admin users always have full access.");
+      return false;
+    }
+
+    const rows = (overrideRows || []).map((row) => ({
+      user_id: userId,
+      module: String(row.module || "").trim(),
+      can_view: typeof row.can_view === "boolean" ? row.can_view : null,
+      can_create: typeof row.can_create === "boolean" ? row.can_create : null,
+      can_edit: typeof row.can_edit === "boolean" ? row.can_edit : null,
+      can_delete: typeof row.can_delete === "boolean" ? row.can_delete : null,
+      scope_type: row.scope_type || null,
+      department_names: row.scope_type === "selected_departments" && Array.isArray(row.department_names) ? row.department_names : [],
+      updated_at: new Date().toISOString(),
+    })).filter((row) => row.module);
+
+    const rowsToSave = rows.filter((row) => (
+      typeof row.can_view === "boolean"
+      || typeof row.can_create === "boolean"
+      || typeof row.can_edit === "boolean"
+      || typeof row.can_delete === "boolean"
+      || !!row.scope_type
+    ));
+    const existingForUser = (data.userPermissions || []).filter((row) => row.user_id === userId);
+
+    try {
+      const deleteResult = await supabase.from("user_permissions").delete().eq("user_id", userId);
+      ensureSupabaseSuccess(deleteResult, "User permission cleanup failed");
+      let savedRows = rowsToSave;
+      if (rowsToSave.length) {
+        const saveResult = await supabase.from("user_permissions").upsert(rowsToSave, { onConflict: "user_id,module" }).select("*");
+        savedRows = ensureSupabaseSuccess(saveResult, "User permission save failed") || rowsToSave;
+      }
+      setData((current) => ({
+        ...current,
+        userPermissions: [
+          ...(current.userPermissions || []).filter((row) => row.user_id !== userId),
+          ...savedRows,
+        ],
+      }));
+      await logActivity(
+        existingForUser.length || rowsToSave.length ? "UPDATE_USER_OVERRIDES" : "RESET_USER_PERMISSIONS",
+        "user_permissions",
+        `Saved overrides for ${targetUser.email || targetUser.full_name || userId}`,
+      );
+      notify("User overrides saved.");
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`User override save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function resetUserPermissions(userId) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can reset user permissions.");
+      return false;
+    }
+    const targetUser = (data.users || []).find((user) => user.id === userId);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+    try {
+      const result = await supabase.from("user_permissions").delete().eq("user_id", userId);
+      ensureSupabaseSuccess(result, "User permission reset failed");
+      setData((current) => ({
+        ...current,
+        userPermissions: (current.userPermissions || []).filter((row) => row.user_id !== userId),
+      }));
+      await logActivity("RESET_USER_PERMISSIONS", "user_permissions", `Reset user permissions for ${targetUser.email || targetUser.full_name || userId}`);
+      notify("User permissions reset to role defaults.");
+      return true;
+    } catch (error) {
+      notify(`User permission reset failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function resetRoleUserPermissions(role) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can apply role defaults.");
+      return false;
+    }
+    const normalizedRole = normalizeRoleName(role);
+    const roleUsers = (data.users || []).filter((user) => normalizeRoleName(user.role) === normalizedRole);
+    const userIds = roleUsers.map((user) => user.id).filter(Boolean);
+    if (!userIds.length) {
+      notify("No users found for this role.");
+      return false;
+    }
+    try {
+      const result = await supabase.from("user_permissions").delete().in("user_id", userIds);
+      ensureSupabaseSuccess(result, "Role user permission reset failed");
+      setData((current) => ({
+        ...current,
+        userPermissions: (current.userPermissions || []).filter((row) => !userIds.includes(row.user_id)),
+      }));
+      await logActivity("APPLY_ROLE_DEFAULTS", "user_permissions", `Applied ${normalizedRole} role defaults to ${userIds.length} user(s)`);
+      notify(`Role defaults applied to ${userIds.length} user(s).`);
+      return true;
+    } catch (error) {
+      notify(`Role defaults apply failed: ${error.message}`);
       return false;
     }
   }
@@ -1849,13 +2814,69 @@ export default function App() {
     }
   }
 
+  async function updateActivityLoggingEnabled(enabled) {
+    if (!canManageActivityLogging) {
+      notify("You do not have permission to change activity history settings.");
+      return false;
+    }
+
+    const nextValue = !!enabled;
+    const previousValue = activityLoggingEnabled;
+    const patch = {
+      key: ACTIVITY_LOGGING_SETTING_KEY,
+      value: nextValue,
+      updated_at: new Date().toISOString(),
+    };
+
+    setData((current) => ({
+      ...current,
+      appSettings: {
+        ...(current.appSettings || {}),
+        [ACTIVITY_LOGGING_SETTING_KEY]: nextValue,
+      },
+    }));
+
+    try {
+      const result = await supabase.from("app_settings").upsert(patch, { onConflict: "key" });
+      ensureSupabaseSuccess(result, "Activity setting save failed");
+      if (previousValue) {
+        await logActivity(
+          nextValue ? "ENABLE_ACTIVITY_HISTORY" : "DISABLE_ACTIVITY_HISTORY",
+          "app_settings",
+          nextValue ? "Enabled activity history storage" : "Disabled activity history storage",
+          { entityId: null },
+        );
+      }
+      notify(nextValue ? "Activity history storage enabled." : "Activity history storage disabled.");
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`Activity setting save failed: ${error.message}`);
+      return false;
+    }
+  }
+
   function openClientProfile(clientId) {
     setActiveClientProfileId(clientId);
+    setClientProfileMode("view");
+    setActiveView("clients-profile");
+  }
+
+  function openClientEditor(clientId) {
+    setActiveClientProfileId(clientId);
+    setClientProfileMode("edit");
     setActiveView("clients-profile");
   }
 
   function issueLetterForClient(clientId) {
-    setIssueDraft((current) => ({ ...current, clientId: clientId || "" }));
+    const selectedClient = data.clients.find((client) => client.id === (clientId || ""));
+    setIssueDraft((current) =>
+      createIssueDraft(data, {
+        ...current,
+        clientId: clientId || "",
+        ...buildIssueDraftPatchFromClient(selectedClient),
+      }),
+    );
     setActiveView("issue");
   }
 
@@ -1864,13 +2885,14 @@ export default function App() {
   }
 
   async function toggleRolePermission(role, module, action, value) {
-    if (currentRole !== "super_admin") {
-      notify("Only super admin can change access matrix.");
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change access matrix.");
       return;
     }
-    const existing = (data.rolePermissions || []).find((row) => row.role === role && row.module === module);
+    const normalizedRole = normalizeRoleName(role);
+    const existing = (data.rolePermissions || []).find((row) => normalizeRoleName(row.role) === normalizedRole && row.module === module);
     const patch = {
-      role,
+      role: normalizedRole,
       module,
       can_view: existing?.can_view ?? false,
       can_create: existing?.can_create ?? false,
@@ -1878,13 +2900,129 @@ export default function App() {
       can_delete: existing?.can_delete ?? false,
     };
     patch[`can_${action}`] = value;
-    if (existing?.id) patch.id = existing.id;
-    const result = await supabase.from("role_permissions").upsert(patch, { onConflict: "role,module" });
-    ensureSupabaseSuccess(result, "Permission update failed");
-    await logActivity("UPDATE_ROLE_PERMISSION", "role_permissions", `${role} -> ${module}.${action} = ${value}`, {
-      entityId: existing?.id || null,
-    });
-    await refreshData();
+    const optimisticPatch = { id: existing?.id || createId(), ...patch };
+    const nextPermissions = existing
+      ? (data.rolePermissions || []).map((row) => (normalizeRoleName(row.role) === normalizedRole && row.module === module ? optimisticPatch : row))
+      : [...(data.rolePermissions || []), optimisticPatch];
+    setData((current) => ({ ...current, rolePermissions: nextPermissions }));
+    try {
+      const result = await supabase.from("role_permissions").upsert(patch, { onConflict: "role,module" }).select("*").single();
+      const savedPermission = ensureSupabaseSuccess(result, "Role permission save failed");
+      setData((current) => ({
+        ...current,
+        rolePermissions: (current.rolePermissions || []).map((row) => (
+          normalizeRoleName(row.role) === normalizedRole && row.module === module ? savedPermission : row
+        )),
+      }));
+      await logActivity("UPDATE_ROLE_PERMISSION", "role_permissions", `${normalizedRole} -> ${module}.${action} = ${value}`, {
+        entityId: savedPermission?.id || existing?.id || null,
+      });
+    } catch (error) {
+      await refreshData();
+      notify(`Role permission save failed: ${error.message}`);
+    }
+  }
+
+  async function addRole(name) {
+    const roleName = normalizeRoleName(String(name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_"));
+    if (!roleName) {
+      notify("Role name is required.");
+      return false;
+    }
+    if (roleName.replace(/_/g, "") === "superadmin") {
+      notify("Use admin for full access.");
+      return false;
+    }
+    if (roleTableRoles.includes(roleName)) {
+      notify("Role already exists.");
+      return false;
+    }
+    try {
+      const result = await supabase.from("roles").insert({ name: roleName });
+      ensureSupabaseSuccess(result, "Role create failed");
+      await refreshData();
+      await logActivity("CREATE_ROLE", "roles", `Created role ${roleName}`);
+      notify("Role created");
+      return true;
+    } catch (error) {
+      notify(`Role create failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function deleteRole(name) {
+    const roleName = normalizeRoleName(name);
+    if (!roleName || hasFullAccessRole(roleName)) {
+      notify("This role cannot be deleted.");
+      return false;
+    }
+    if (!window.confirm(`Delete role "${roleName}"?`)) {
+      return false;
+    }
+    const assignedUsers = (data.users || []).filter((user) => normalizeRoleName(user.role) === roleName);
+    if (assignedUsers.length) {
+      notify(`Cannot delete role "${roleName}" because ${assignedUsers.length} user(s) are using it.`);
+      return false;
+    }
+    try {
+      const permissionResult = await supabase.from("role_permissions").delete().eq("role", roleName);
+      ensureSupabaseSuccess(permissionResult, "Role permission delete failed");
+      const scopeResult = await supabase.from("role_data_scopes").delete().eq("role", roleName);
+      ensureSupabaseSuccess(scopeResult, "Role scope delete failed");
+      const roleResult = await supabase.from("roles").delete().eq("name", roleName);
+      ensureSupabaseSuccess(roleResult, "Role delete failed");
+      await refreshData();
+      await logActivity("DELETE_ROLE", "roles", `Deleted role ${roleName}`);
+      notify("Role deleted");
+      return true;
+    } catch (error) {
+      notify(`Role delete failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function addPermissionModule(name) {
+    const moduleName = String(name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+    if (!moduleName) {
+      notify("Module name is required.");
+      return false;
+    }
+    if (dynamicPermissionModules.includes(moduleName)) {
+      notify("Module already exists.");
+      return false;
+    }
+    try {
+      const result = await supabase.from("permission_modules").insert({ name: moduleName });
+      ensureSupabaseSuccess(result, "Permission module create failed");
+      await refreshData();
+      notify("Permission module created");
+      return true;
+    } catch (error) {
+      notify(`Permission module create failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function deletePermissionModule(name) {
+    const moduleName = String(name || "").trim();
+    if (!moduleName) {
+      return false;
+    }
+    if (!window.confirm(`Delete module "${moduleName}" from access matrix?`)) {
+      return false;
+    }
+    try {
+      const permRes = await supabase.from("role_permissions").delete().eq("module", moduleName);
+      ensureSupabaseSuccess(permRes, "Module permission delete failed");
+      const moduleRes = await supabase.from("permission_modules").delete().eq("name", moduleName);
+      ensureSupabaseSuccess(moduleRes, "Module delete failed");
+      await refreshData();
+      notify("Permission module deleted");
+      return true;
+    } catch (error) {
+      notify(`Permission module delete failed: ${error.message}`);
+      return false;
+    }
   }
 
   function openLetter(letterId, options = {}) {
@@ -1893,13 +3031,14 @@ export default function App() {
     if (!letter) {
       return;
     }
+    const linkedClient = findLinkedClient(data.clients, letter);
 
     setIssueDraft(
       createIssueDraft(data, {
         companyId: letter.companyId,
         departmentId: letter.departmentId,
         templateId: letter.templateId,
-        clientId: letter.clientId || "",
+        clientId: linkedClient?.id || letter.clientId || "",
         issueDate: letter.issueDate,
         subject: letter.subject,
         recipientName: letter.recipientName,
@@ -1989,12 +3128,15 @@ export default function App() {
           <TemplatesView
             companies={data.companies}
             departments={data.departments}
+            templateTypes={data.templateTypes}
             templates={data.templates}
             onAddTemplate={addTemplate}
             onUpdateTemplate={updateTemplate}
             onDeleteTemplate={deleteTemplate}
             onDuplicateTemplate={duplicateTemplate}
             onBulkDeleteTemplates={bulkDeleteTemplates}
+            onAddTemplateType={addTemplateType}
+            onDeleteTemplateType={deleteTemplateType}
             editTemplateId={templateEditorTargetId}
             onConsumeEditTarget={() => setTemplateEditorTargetId("")}
           />
@@ -2006,13 +3148,14 @@ export default function App() {
             departments={data.departments}
             templates={data.templates}
             clients={data.clients}
+            clientFields={data.clientFields}
+            letters={data.letters}
             draft={issueDraft}
             preview={preview}
             onDraftChange={updateIssueDraft}
             onIssueLetter={issueLetter}
             onPrint={() => setPendingPrint(true)}
             onEditTemplate={() => openTemplateEditor(issueDraft.templateId)}
-            onSearchEmployees={searchEmployeesFromHr}
             isEditingLetter={Boolean(editingLetterId)}
             onCancelEditLetter={cancelEditLetter}
           />
@@ -2032,9 +3175,19 @@ export default function App() {
           />
         );
       case "clients-create":
-        return <CreateClientView permissions={rolePermissions.clients} clientFields={data.clientFields} onAddClient={addClient} />;
+        return (
+          <CreateClientView
+            permissions={rolePermissions["clients-create"] || { view: false, create: false, edit: false, delete: false }}
+            fieldManagerPermissions={hasFullAccessRole(currentRole) ? { view: true, create: true, edit: true, delete: true } : { view: false, create: false, edit: false, delete: false }}
+            clientFields={data.clientFields}
+            onAddClient={addClient}
+            onAddClientField={addClientField}
+            onUpdateClientField={updateClientField}
+            onDeleteClientField={deleteClientField}
+          />
+        );
       case "clients-all":
-        return <AllClientsView clients={data.clients} permissions={rolePermissions.clients} onDeleteClient={deleteClient} onOpenClient={openClientProfile} />;
+        return <AllClientsView clients={data.clients} permissions={rolePermissions["clients-all"] || { view: false, create: false, edit: false, delete: false }} onDeleteClient={deleteClient} onOpenClient={openClientProfile} onEditClient={openClientEditor} />;
       case "clients-profile":
         return (
           <ClientProfileView
@@ -2042,27 +3195,53 @@ export default function App() {
             letters={data.letters}
             users={data.users}
             clientFields={data.clientFields}
+            isEditing={clientProfileMode === "edit"}
+            onSaveClient={async (patch) => {
+              const ok = await updateClient(activeClientProfileId, patch);
+              if (ok) {
+                setClientProfileMode("view");
+              }
+              return ok;
+            }}
             onIssueLetterForClient={issueLetterForClient}
             onExportLetterPdf={exportLetterPdfFromClientProfile}
           />
         );
       case "users":
-        return <UsersView users={data.users} permissions={rolePermissions.users} onAddUser={addUser} onToggleUserActive={toggleUserActive} />;
+        return (
+          <UsersView
+            users={data.users}
+            roles={roleTableRoles}
+            permissions={rolePermissions.users || { view: false, create: false, edit: false, delete: false }}
+            canResetPasswords={hasFullAccessRole(currentRole)}
+            onAddUser={addUser}
+            onUpdateUser={updateUser}
+            onToggleUserActive={toggleUserActive}
+            onDeleteUser={deleteUser}
+            onResetUserPassword={resetUserPassword}
+          />
+        );
       case "roles":
-        return <RolesView users={data.users} />;
+        return <RolesView users={data.users} roles={roleTableRoles} onAddRole={addRole} onDeleteRole={deleteRole} />;
       case "activity":
         return <ActivityView entries={data.activity} />;
       case "admin":
         return (
           <AdminView
             stats={{ users: data.users.length, clients: data.clients.length, reports: data.reports.length, activity: data.activity.length }}
+            roles={roleTableRoles}
+            modules={dynamicPermissionModules}
+            users={data.users}
             allPermissions={allPermissionsByRole}
-            currentRole={currentRole}
-            clientFields={data.clientFields}
-            onTogglePermission={toggleRolePermission}
-            onAddClientField={addClientField}
-            onUpdateClientField={updateClientField}
-            onDeleteClientField={deleteClientField}
+            roleDataScopes={data.roleDataScopes}
+            userPermissions={data.userPermissions}
+            departments={data.departments.map((department) => department.name).filter(Boolean)}
+            activityLoggingEnabled={activityLoggingEnabled}
+            canManageAccess={canManageAccess}
+            canManageActivityLogging={canManageActivityLogging}
+            onSaveRoleAccess={saveRoleAccess}
+            onSaveUserPermissionOverrides={saveUserPermissionOverrides}
+            onUpdateActivityLoggingEnabled={updateActivityLoggingEnabled}
           />
         );
       default:
@@ -2119,7 +3298,14 @@ export default function App() {
                 Enter your credentials to continue.
               </p>
             </div>
-            <div className="form-grid" style={{ gap: 14, display: "flex", flexDirection: "column" }}>
+            <form
+              className="form-grid"
+              style={{ gap: 14, display: "flex", flexDirection: "column" }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                signIn();
+              }}
+            >
               <label>
                 Email Address
                 <input
@@ -2128,6 +3314,7 @@ export default function App() {
                   onChange={(e) => setAuthEmail(e.target.value)}
                   placeholder="you@company.com"
                   autoComplete="username"
+                  required
                 />
               </label>
               <label>
@@ -2138,12 +3325,13 @@ export default function App() {
                   onChange={(e) => setAuthPassword(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
+                  required
                 />
               </label>
-              <button className="button button-primary" type="button" onClick={signIn} style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
-                Sign In
+              <button className="button button-primary" type="submit" disabled={authSubmitting} style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
+                {authSubmitting ? "Signing in..." : "Sign In"}
               </button>
-            </div>
+            </form>
           </div>
         </section>
       </div>
@@ -2199,7 +3387,7 @@ export default function App() {
       </section>
 
       <nav className="tabs" aria-label="Primary">
-        {visibleViews.map((view) => (
+        {navigableViews.map((view) => (
           <button
             key={view.id}
             className={`tab ${activeView === view.id ? "is-active" : ""}`}

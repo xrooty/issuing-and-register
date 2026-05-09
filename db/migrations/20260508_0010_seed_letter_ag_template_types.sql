@@ -1,0 +1,5 @@
+insert into public.template_types(code, name) values
+  ('LETTER', 'Letter'),
+  ('AG', 'AG')
+on conflict (code) do nothing;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            

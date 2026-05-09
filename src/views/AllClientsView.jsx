@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import EmptyState from "../components/EmptyState";
 
-export default function AllClientsView({ clients, permissions, onDeleteClient, onOpenClient }) {
+export default function AllClientsView({ clients, permissions, onDeleteClient, onOpenClient, onEditClient }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -54,6 +54,7 @@ export default function AllClientsView({ clients, permissions, onDeleteClient, o
                     <td>
                       <div className="row-actions">
                         <button className="button button-secondary" type="button" onClick={() => onOpenClient(client.id)}>View Client</button>
+                        {permissions?.edit && <button className="button button-secondary" type="button" onClick={() => onEditClient?.(client.id)}>Edit</button>}
                         {permissions?.delete && <button className="button button-secondary" type="button" onClick={() => onDeleteClient(client.id)}>Delete</button>}
                       </div>
                     </td>

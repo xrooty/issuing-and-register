@@ -7,6 +7,7 @@ create table if not exists companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   short_code text not null,
+  code text not null,
   address text default '',
   phone text default '',
   email text default '',
@@ -71,6 +72,7 @@ create table if not exists letters (
   rendered_body text default '',
   pdf_file_name text default '',
   pdf_storage_path text default '',
+  custom_fields_json jsonb not null default '{}'::jsonb,
   template_snapshot_json jsonb,
   created_at timestamptz not null default now()
 );
@@ -84,7 +86,7 @@ create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
   full_name text default '',
-  role text not null default 'viewer',
+  role text not null default '',
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -103,6 +105,7 @@ create table if not exists activity_log (
 create table if not exists clients (
   id uuid primary key default gen_random_uuid(),
   client_name text not null,
+  client_code text default '',
   company text default '',
   contact_name text default '',
   contact_name_secondary text default '',
@@ -154,6 +157,12 @@ create table if not exists reports (
   created_at timestamptz not null default now()
 );
 
+create table if not exists app_settings (
+  key text primary key,
+  value jsonb not null default 'null'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists role_permissions (
   id uuid primary key default gen_random_uuid(),
   role text not null,
@@ -164,6 +173,46 @@ create table if not exists role_permissions (
   can_delete boolean not null default false,
   created_at timestamptz not null default now(),
   unique (role, module)
+);
+
+create table if not exists role_data_scopes (
+  id uuid primary key default gen_random_uuid(),
+  role text not null,
+  module text not null,
+  scope_type text not null default 'own_department',
+  department_names text[] not null default '{}'::text[],
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (role, module),
+  constraint role_data_scopes_scope_type_check check (scope_type in ('own_data', 'own_department', 'selected_departments', 'all_departments'))
+);
+
+create table if not exists user_permissions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  module text not null,
+  can_view boolean,
+  can_create boolean,
+  can_edit boolean,
+  can_delete boolean,
+  scope_type text,
+  department_names text[] not null default '{}'::text[],
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, module),
+  constraint user_permissions_scope_type_check check (scope_type is null or scope_type in ('own_data', 'own_department', 'selected_departments', 'all_departments'))
+);
+
+create table if not exists roles (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists permission_modules (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz not null default now()
 );
 
 do $$
@@ -186,6 +235,8 @@ create index if not exists idx_letters_company_id on letters(company_id);
 create index if not exists idx_letters_department_id on letters(department_id);
 create index if not exists idx_letters_template_id on letters(template_id);
 create index if not exists idx_letters_created_at on letters(created_at desc);
+create index if not exists idx_role_data_scopes_role on role_data_scopes(role);
+create index if not exists idx_user_permissions_user_id on user_permissions(user_id);
 
 create or replace function next_sequence(counter_key text)
 returns integer
@@ -209,8 +260,272 @@ revoke all on function next_sequence(text) from public;
 grant execute on function next_sequence(text) to anon, authenticated, service_role;
 
 insert into template_types(code, name) values
+  ('LETTER', 'Letter'),
+  ('AG', 'AG'),
   ('OFFER', 'Offer Letter'),
   ('WARN', 'Warning Letter'),
   ('PROM', 'Promotion Letter'),
   ('CERT', 'Certificate')
 on conflict (code) do nothing;
+
+insert into roles(name) values
+  ('admin')
+on conflict (name) do nothing;
+
+update users
+set role = 'admin'
+where role = 'super_admin';
+
+delete from roles
+where name = 'super_admin';
+
+create or replace function public.sync_auth_user_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requested_role text;
+begin
+  requested_role := nullif(new.raw_user_meta_data->>'role', '');
+
+  if requested_role = 'super_admin' then
+    requested_role := 'admin';
+  end if;
+
+  insert into public.users (id, email, full_name, role, active)
+  values (
+    new.id,
+    lower(new.email),
+    coalesce(nullif(new.raw_user_meta_data->>'full_name', ''), ''),
+    case
+      when not exists (select 1 from public.users where role = 'admin') then 'admin'
+      else coalesce(requested_role, '')
+    end,
+    true
+  )
+  on conflict (email) do update
+  set
+    full_name = case
+      when nullif(public.users.full_name, '') is null then excluded.full_name
+      else public.users.full_name
+    end,
+    role = case
+      when public.users.role = 'super_admin' then 'admin'
+      else public.users.role
+    end,
+    active = true;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created_profile on auth.users;
+
+create trigger on_auth_user_created_profile
+after insert on auth.users
+for each row execute function public.sync_auth_user_profile();
+
+drop function if exists public.admin_reset_user_password(uuid, text);
+
+create or replace function public.admin_reset_user_password(target_user_id uuid, previous_password text, new_password text)
+returns void
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  actor_is_admin boolean;
+  target_email text;
+  current_encrypted_password text;
+begin
+  actor_is_admin := exists (
+    select 1
+    from public.users
+    where id = auth.uid()
+      and active = true
+      and role = 'admin'
+  );
+
+  if not actor_is_admin then
+    raise exception 'Only admin can reset passwords.';
+  end if;
+
+  if length(coalesce(new_password, '')) < 6 then
+    raise exception 'Password must be at least 6 characters.';
+  end if;
+
+  if coalesce(previous_password, '') = '' then
+    raise exception 'Previous password is required.';
+  end if;
+
+  select public.users.email, auth.users.encrypted_password
+  into target_email, current_encrypted_password
+  from public.users
+  left join auth.users on auth.users.id = public.users.id
+  where public.users.id = target_user_id;
+
+  if target_email is null then
+    raise exception 'User not found.';
+  end if;
+
+  if current_encrypted_password is null then
+    raise exception 'Supabase Auth user not found for %.', target_email;
+  end if;
+
+  if crypt(previous_password, current_encrypted_password) <> current_encrypted_password then
+    raise exception 'Previous password is incorrect.';
+  end if;
+
+  update auth.users
+  set
+    encrypted_password = crypt(new_password, gen_salt('bf')),
+    updated_at = now()
+  where id = target_user_id;
+
+  if not found then
+    raise exception 'Supabase Auth user not found for %.', target_email;
+  end if;
+end;
+$$;
+
+create or replace function public.admin_delete_user(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  actor_id uuid;
+  actor_is_admin boolean;
+  target_role text;
+  target_email text;
+  other_active_admins integer;
+begin
+  actor_id := auth.uid();
+
+  actor_is_admin := exists (
+    select 1
+    from public.users
+    where id = actor_id
+      and active = true
+      and role = 'admin'
+  );
+
+  if not actor_is_admin then
+    raise exception 'Only admin can delete users.';
+  end if;
+
+  if actor_id = target_user_id then
+    raise exception 'You cannot delete your own signed-in account.';
+  end if;
+
+  select role, email
+  into target_role, target_email
+  from public.users
+  where id = target_user_id;
+
+  if target_email is null then
+    raise exception 'User not found.';
+  end if;
+
+  if target_role = 'admin' then
+    select count(*)
+    into other_active_admins
+    from public.users
+    where id <> target_user_id
+      and active = true
+      and role = 'admin';
+
+    if other_active_admins < 1 then
+      raise exception 'At least one active admin user is required.';
+    end if;
+  end if;
+
+  delete from auth.users
+  where id = target_user_id;
+
+  delete from public.users
+  where id = target_user_id;
+end;
+$$;
+
+revoke all on function public.admin_reset_user_password(uuid, text, text) from public;
+revoke all on function public.admin_delete_user(uuid) from public;
+
+grant execute on function public.admin_reset_user_password(uuid, text, text) to authenticated, service_role;
+grant execute on function public.admin_delete_user(uuid) to authenticated, service_role;
+
+with auth_profiles as (
+  select
+    auth_users.id,
+    lower(auth_users.email) as email,
+    coalesce(nullif(auth_users.raw_user_meta_data->>'full_name', ''), '') as full_name,
+    case
+      when auth_users.raw_user_meta_data->>'role' = 'super_admin' then 'admin'
+      else coalesce(nullif(auth_users.raw_user_meta_data->>'role', ''), '')
+    end as requested_role,
+    row_number() over (order by auth_users.created_at, auth_users.id) as auth_order
+  from auth.users as auth_users
+  where auth_users.email is not null
+)
+insert into public.users (id, email, full_name, role, active)
+select
+  auth_profiles.id,
+  auth_profiles.email,
+  auth_profiles.full_name,
+  case
+    when auth_profiles.auth_order = 1
+      and not exists (select 1 from public.users where role = 'admin')
+      then 'admin'
+    else auth_profiles.requested_role
+  end,
+  true
+from auth_profiles
+on conflict (email) do update
+set
+  full_name = case
+    when nullif(public.users.full_name, '') is null then excluded.full_name
+    else public.users.full_name
+  end,
+  role = case
+    when public.users.role = 'super_admin' then 'admin'
+    else public.users.role
+  end,
+  active = true;
+
+update public.users
+set role = 'admin'
+where id = (
+  select id
+  from public.users
+  where active = true
+  order by created_at nulls last, email
+  limit 1
+)
+and not exists (
+  select 1
+  from public.users
+  where role = 'admin'
+);
+
+insert into permission_modules(name) values
+  ('clients'),
+  ('users'),
+  ('roles'),
+  ('admin'),
+  ('activity_settings'),
+  ('reports'),
+  ('activity'),
+  ('companies'),
+  ('departments'),
+  ('templates'),
+  ('issue'),
+  ('register'),
+  ('client_fields')
+on conflict (name) do nothing;
+
+insert into app_settings(key, value) values
+  ('activity_logging_enabled', 'true'::jsonb)
+on conflict (key) do nothing;

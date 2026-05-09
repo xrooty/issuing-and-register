@@ -9,6 +9,8 @@ import {
 
 const A4_BASE_WIDTH_PX = 794;
 const A4_BASE_HEIGHT_PX = 1123;
+const LEGAL_BASE_WIDTH_PX = 816;
+const LEGAL_BASE_HEIGHT_PX = 1344;
 
 function getLineStrokeWidth(element) {
   const explicitWidth = Number(element?.borderWidth);
@@ -283,6 +285,10 @@ function createAutoBackgroundOverlayElements() {
 export default function LetterPreview({ preview }) {
   const stageRef = useRef(null);
   const [sheetScale, setSheetScale] = useState(1);
+  const previewDesign = preview ? normalizeTemplateDesign(preview.template.design) : null;
+  const isLegalPage = String(previewDesign?.pageSize || "A4").toUpperCase() === "LEGAL";
+  const pageBaseWidth = isLegalPage ? LEGAL_BASE_WIDTH_PX : A4_BASE_WIDTH_PX;
+  const pageBaseHeight = isLegalPage ? LEGAL_BASE_HEIGHT_PX : A4_BASE_HEIGHT_PX;
 
   useEffect(() => {
     const node = stageRef.current;
@@ -292,7 +298,7 @@ export default function LetterPreview({ preview }) {
 
     const updateScale = () => {
       const availableWidth = Math.max(120, Number(node.clientWidth || 0));
-      const nextScale = Math.min(1, availableWidth / A4_BASE_WIDTH_PX);
+      const nextScale = Math.min(1, availableWidth / pageBaseWidth);
       setSheetScale(Number.isFinite(nextScale) ? nextScale : 1);
     };
 
@@ -306,14 +312,16 @@ export default function LetterPreview({ preview }) {
     const observer = new ResizeObserver(() => updateScale());
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [pageBaseWidth]);
 
   if (!preview) {
     return <EmptyState title="Preview unavailable" message="Select a company, department, and template to build the letter." />;
   }
 
   const { company, department, template, values } = preview;
-  const design = normalizeTemplateDesign(template.design);
+  const design = previewDesign;
+  const totalPages = Math.max(1, Number(design.additionalPages || 1));
+  const pageIndexes = Array.from({ length: totalPages }, (_, index) => index);
   const sourceCanvasElements = [...design.canvas.elements].sort((left, right) => left.zIndex - right.zIndex);
   const valueMap = buildLetterValueMap({ company, department, template, values });
   const isBackgroundMode = design.renderMode === "background" || Boolean(design.backgroundImage.dataUrl);
@@ -353,59 +361,79 @@ export default function LetterPreview({ preview }) {
     <div
       ref={stageRef}
       className="letter-sheet-stage"
-      style={{ height: `${Math.round(A4_BASE_HEIGHT_PX * sheetScale)}px` }}
+      style={{
+        "--preview-page-width-print": isLegalPage ? "216mm" : "210mm",
+        "--preview-page-height-print": isLegalPage ? "356mm" : "297mm",
+        height: `${Math.round((pageBaseHeight * totalPages + Math.max(0, totalPages - 1) * 24) * sheetScale)}px`,
+        maxWidth: `${pageBaseWidth}px`,
+      }}
     >
       <div
-        className={`letter-sheet letter-sheet--${design.layout} ${isBackgroundMode ? "letter-sheet--background-mode" : ""}`}
         style={{
-          "--template-accent": design.accentColor,
-          "--template-secondary": design.secondaryColor,
+          display: "grid",
+          gap: 24,
+          width: `${pageBaseWidth}px`,
           transform: `scale(${sheetScale})`,
           transformOrigin: "top left",
         }}
       >
-      {design.backgroundImage.dataUrl ? (
-        <img
-          className="letter-background"
-          src={design.backgroundImage.dataUrl}
-          alt="Letterhead background"
-          style={{
-            objectFit: design.backgroundImage.fit,
-            opacity: design.backgroundImage.opacity / 100,
-          }}
-        />
-      ) : null}
+        {pageIndexes.map((pageIndex) => (
+          <div
+            key={`preview-page-${pageIndex + 1}`}
+            className={`letter-sheet letter-sheet--${design.layout} ${isBackgroundMode ? "letter-sheet--background-mode" : ""}`}
+            style={{
+              "--template-accent": design.accentColor,
+              "--template-secondary": design.secondaryColor,
+              width: `${pageBaseWidth}px`,
+              minWidth: `${pageBaseWidth}px`,
+              minHeight: `${pageBaseHeight}px`,
+              aspectRatio: `${pageBaseWidth} / ${pageBaseHeight}`,
+            }}
+          >
+            {design.backgroundImage.dataUrl ? (
+              <img
+                className="letter-background"
+                src={design.backgroundImage.dataUrl}
+                alt="Letterhead background"
+                style={{
+                  objectFit: design.backgroundImage.fit,
+                  opacity: design.backgroundImage.opacity / 100,
+                }}
+              />
+            ) : null}
 
-      <div className="preview-canvas-layer" aria-hidden="true">
-        <div className="preview-canvas-content-layer" style={contentLayerStyle}>
-          {canvasElements.map((element) => renderCanvasElement(element, valueMap))}
-          {isBackgroundMode && !hasBodyBinding ? (
-            <div
-              className="preview-canvas-element preview-canvas-element--text preview-canvas-element--body-fallback"
-              style={{
-                left: "8%",
-                top: "45%",
-                width: "84%",
-                height: "32%",
-                zIndex: 999,
-                color: "#1e2321",
-                borderColor: "transparent",
-                borderWidth: "0px",
-                fontSize: "12px",
-                fontWeight: "400",
-                textAlign: "left",
-                opacity: 1,
-                backgroundColor: "transparent",
-              }}
-            >
-              {renderMarkdownBlocks(valueMap.body_text || "Template body will appear here.", "body-fallback")}
+            <div className="preview-canvas-layer" aria-hidden="true">
+              <div className="preview-canvas-content-layer" style={contentLayerStyle}>
+                {canvasElements
+                  .filter((element) => Number(element.pageIndex || 0) === pageIndex)
+                  .map((element) => renderCanvasElement(element, valueMap))}
+                {isBackgroundMode && !hasBodyBinding ? (
+                  <div
+                    className="preview-canvas-element preview-canvas-element--text preview-canvas-element--body-fallback"
+                    style={{
+                      left: "8%",
+                      top: "45%",
+                      width: "84%",
+                      height: "32%",
+                      zIndex: 999,
+                      color: "#1e2321",
+                      borderColor: "transparent",
+                      borderWidth: "0px",
+                      fontSize: "12px",
+                      fontWeight: "400",
+                      textAlign: "left",
+                      opacity: 1,
+                      backgroundColor: "transparent",
+                    }}
+                  >
+                    {renderMarkdownBlocks(valueMap.body_text || "Template body will appear here.", `body-fallback-${pageIndex}`)}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          ) : null}
-        </div>
-      </div>
 
-      {isBackgroundMode ? null : (
-        <>
+            {isBackgroundMode ? null : (
+              <>
           {design.showDecorativeHeader ? <div className="letter-decor" aria-hidden="true" /> : null}
           {design.showDecorativeHeader && design.layout !== "classic" ? <div className="letter-decor letter-decor--secondary" aria-hidden="true" /> : null}
 
@@ -500,8 +528,10 @@ export default function LetterPreview({ preview }) {
               </p>
             ) : null}
           </footer>
-        </>
-      )}
+              </>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

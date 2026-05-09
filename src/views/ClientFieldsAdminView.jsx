@@ -10,9 +10,12 @@ const EMPTY_FIELD = {
   sort_order: 100,
 };
 
-export default function ClientFieldsAdminView({ currentRole, clientFields, onAddClientField, onUpdateClientField, onDeleteClientField }) {
+export default function ClientFieldsAdminView({ permissions, clientFields, onAddClientField, onUpdateClientField, onDeleteClientField }) {
   const [draft, setDraft] = useState(EMPTY_FIELD);
-  const canManage = currentRole === "super_admin";
+  const canView = !!permissions?.view;
+  const canCreate = !!permissions?.create;
+  const canEdit = !!permissions?.edit;
+  const canDelete = !!permissions?.delete;
   const rows = useMemo(
     () => (clientFields || []).slice().sort((a, b) => Number(a.sort_order || 100) - Number(b.sort_order || 100)),
     [clientFields],
@@ -42,18 +45,21 @@ export default function ClientFieldsAdminView({ currentRole, clientFields, onAdd
     if (nextOptions == null) return;
     const nextSortRaw = window.prompt("Sort order", String(field.sort_order || 100));
     if (nextSortRaw == null) return;
+    const nextRequiredRaw = window.prompt("Required? (yes/no)", field.is_required ? "yes" : "no");
+    if (nextRequiredRaw == null) return;
     await onUpdateClientField(field.id, {
       label: nextLabel,
       input_type: nextType,
       options_json: String(nextOptions).split(",").map((item) => item.trim()).filter(Boolean),
       sort_order: Number(nextSortRaw || 100),
+      is_required: String(nextRequiredRaw).trim().toLowerCase() === "yes",
     });
   }
 
   return (
     <article className="panel">
       <h3>Client Field Manager</h3>
-      {!canManage ? <p>Only super_admin can manage dynamic client fields.</p> : null}
+      {!canView ? <p>You do not have permission to view field manager.</p> : null}
       <div className="form-grid" style={{ marginBottom: 16 }}>
         <label>Field Key<input value={draft.field_key} onChange={(e) => setDraft((p) => ({ ...p, field_key: e.target.value }))} placeholder="e.g. portfolio_size" /></label>
         <label>Label<input value={draft.label} onChange={(e) => setDraft((p) => ({ ...p, label: e.target.value }))} placeholder="e.g. Portfolio Size" /></label>
@@ -74,7 +80,7 @@ export default function ClientFieldsAdminView({ currentRole, clientFields, onAdd
             <option value="yes">yes</option>
           </select>
         </label>
-        <button className="button button-primary" type="button" onClick={createField} disabled={!canManage}>Create field</button>
+        <button className="button button-primary" type="button" onClick={createField} disabled={!canCreate}>Create field</button>
       </div>
 
       <div className="table-wrap">
@@ -92,13 +98,13 @@ export default function ClientFieldsAdminView({ currentRole, clientFields, onAdd
                 <td>{field.sort_order}</td>
                 <td>
                   <div className="row-actions">
-                    <button className="button button-secondary" type="button" disabled={!canManage} onClick={() => onUpdateClientField(field.id, { is_active: !field.is_active })}>
+                    <button className="button button-secondary" type="button" disabled={!canEdit} onClick={() => onUpdateClientField(field.id, { is_active: !field.is_active })}>
                       {field.is_active ? "Deactivate" : "Activate"}
                     </button>
-                    <button className="button button-secondary" type="button" disabled={!canManage} onClick={() => editField(field)}>
+                    <button className="button button-secondary" type="button" disabled={!canEdit} onClick={() => editField(field)}>
                       Edit
                     </button>
-                    <button className="button button-secondary" type="button" disabled={!canManage || field.is_system} onClick={() => onDeleteClientField(field.id)}>
+                    <button className="button button-secondary" type="button" disabled={!canDelete || field.is_system} onClick={() => onDeleteClientField(field.id)}>
                       Delete
                     </button>
                   </div>
