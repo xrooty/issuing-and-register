@@ -328,8 +328,9 @@ after insert on auth.users
 for each row execute function public.sync_auth_user_profile();
 
 drop function if exists public.admin_reset_user_password(uuid, text);
+drop function if exists public.admin_reset_user_password(uuid, text, text);
 
-create or replace function public.admin_reset_user_password(target_user_id uuid, previous_password text, new_password text)
+create or replace function public.admin_reset_user_password(target_user_id uuid, new_password text)
 returns void
 language plpgsql
 security definer
@@ -338,7 +339,6 @@ as $$
 declare
   actor_is_admin boolean;
   target_email text;
-  current_encrypted_password text;
 begin
   actor_is_admin := exists (
     select 1
@@ -356,26 +356,14 @@ begin
     raise exception 'Password must be at least 6 characters.';
   end if;
 
-  if coalesce(previous_password, '') = '' then
-    raise exception 'Previous password is required.';
-  end if;
-
-  select public.users.email, auth.users.encrypted_password
-  into target_email, current_encrypted_password
+  select public.users.email
+  into target_email
   from public.users
   left join auth.users on auth.users.id = public.users.id
   where public.users.id = target_user_id;
 
   if target_email is null then
     raise exception 'User not found.';
-  end if;
-
-  if current_encrypted_password is null then
-    raise exception 'Supabase Auth user not found for %.', target_email;
-  end if;
-
-  if crypt(previous_password, current_encrypted_password) <> current_encrypted_password then
-    raise exception 'Previous password is incorrect.';
   end if;
 
   update auth.users
@@ -451,10 +439,10 @@ begin
 end;
 $$;
 
-revoke all on function public.admin_reset_user_password(uuid, text, text) from public;
+revoke all on function public.admin_reset_user_password(uuid, text) from public;
 revoke all on function public.admin_delete_user(uuid) from public;
 
-grant execute on function public.admin_reset_user_password(uuid, text, text) to authenticated, service_role;
+grant execute on function public.admin_reset_user_password(uuid, text) to authenticated, service_role;
 grant execute on function public.admin_delete_user(uuid) to authenticated, service_role;
 
 with auth_profiles as (
@@ -511,6 +499,9 @@ and not exists (
 );
 
 insert into permission_modules(name) values
+  ('dashboard_export_register_csv'),
+  ('dashboard_backup_json'),
+  ('dashboard_refresh_db'),
   ('clients'),
   ('users'),
   ('roles'),

@@ -52,7 +52,31 @@ const EMPTY_DATA = {
 };
 const FULL_ACCESS_ROLE = "admin";
 const DEFAULT_ROLES = [FULL_ACCESS_ROLE];
-const DEFAULT_PERMISSION_MODULES = ["dashboard", "companies", "departments", "templates", "issue", "register", "clients-create", "clients-all", "clients-profile", "users", "roles", "activity", "activity_settings", "admin", "client_fields"];
+const DASHBOARD_ACTION_MODULES = {
+  exportRegister: "dashboard_export_register_csv",
+  backupJson: "dashboard_backup_json",
+  refreshDb: "dashboard_refresh_db",
+};
+const DEFAULT_PERMISSION_MODULES = [
+  "dashboard",
+  DASHBOARD_ACTION_MODULES.exportRegister,
+  DASHBOARD_ACTION_MODULES.backupJson,
+  DASHBOARD_ACTION_MODULES.refreshDb,
+  "companies",
+  "departments",
+  "templates",
+  "issue",
+  "register",
+  "clients-create",
+  "clients-all",
+  "clients-profile",
+  "users",
+  "roles",
+  "activity",
+  "activity_settings",
+  "admin",
+  "client_fields",
+];
 const ACCESS_CONFIG_REPORT_TYPE = "system_access_config";
 const ACTIVITY_LOGGING_SETTING_KEY = "activity_logging_enabled";
 
@@ -1042,6 +1066,9 @@ export default function App() {
   const activityLoggingEnabled = isActivityLoggingEnabledFromSettings(data.appSettings);
   const canManageActivityLogging = hasFullAccessRole(currentRole) || !!rolePermissions.activity_settings?.edit;
   const canManageAccess = hasFullAccessRole(currentRole);
+  const canExportRegister = hasFullAccessRole(currentRole) || !!rolePermissions[DASHBOARD_ACTION_MODULES.exportRegister]?.view;
+  const canExportBackup = hasFullAccessRole(currentRole) || !!rolePermissions[DASHBOARD_ACTION_MODULES.backupJson]?.view;
+  const canRefreshDb = hasFullAccessRole(currentRole) || !!rolePermissions[DASHBOARD_ACTION_MODULES.refreshDb]?.view;
   const visibleViews = useMemo(() => {
     return VIEWS.filter((view) => {
       if (view.id === "admin" && canManageActivityLogging) {
@@ -2531,13 +2558,8 @@ export default function App() {
       notify("User email not found.");
       return false;
     }
-    const previousPassword = String(form?.previousPassword || "");
     const newPassword = String(form?.newPassword || "");
     const confirmPassword = String(form?.confirmPassword || "");
-    if (!previousPassword) {
-      notify("Previous password is required.");
-      return false;
-    }
     if (newPassword.length < 6) {
       notify("Password must be at least 6 characters.");
       return false;
@@ -2550,7 +2572,6 @@ export default function App() {
     try {
       const result = await supabase.rpc("admin_reset_user_password", {
         target_user_id: id,
-        previous_password: previousPassword,
         new_password: newPassword,
       });
       ensureSupabaseSuccess(result, "Password reset failed");
@@ -3079,6 +3100,11 @@ export default function App() {
   }
 
   function exportRegister() {
+    if (!canExportRegister) {
+      notify("You do not have permission to export the register.");
+      return;
+    }
+
     const csv = buildRegisterExportCsv(data);
     if (!csv) {
       notify("No letters available for export yet.");
@@ -3090,6 +3116,11 @@ export default function App() {
   }
 
   function exportBackup() {
+    if (!canExportBackup) {
+      notify("You do not have permission to export backups.");
+      return;
+    }
+
     downloadTextFile(
       `letterhead-backup-${getTodayIso()}.json`,
       JSON.stringify(data, null, 2),
@@ -3349,22 +3380,28 @@ export default function App() {
           </p>
         </div>
         <div className="hero-actions" style={{ position: "relative" }}>
-          <button className="button button-secondary" type="button" onClick={exportRegister}>Export Register CSV</button>
-          <button className="button button-secondary" type="button" onClick={exportBackup}>Backup JSON</button>
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={async () => {
-              try {
-                await refreshData();
-                notify("Data refreshed from DB");
-              } catch (error) {
-                notify(`Refresh failed: ${error.message}`);
-              }
-            }}
-          >
-            Refresh DB
-          </button>
+          {canExportRegister ? <button className="button button-secondary" type="button" onClick={exportRegister}>Export Register CSV</button> : null}
+          {canExportBackup ? <button className="button button-secondary" type="button" onClick={exportBackup}>Backup JSON</button> : null}
+          {canRefreshDb ? (
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={async () => {
+                if (!canRefreshDb) {
+                  notify("You do not have permission to refresh DB data.");
+                  return;
+                }
+                try {
+                  await refreshData();
+                  notify("Data refreshed from DB");
+                } catch (error) {
+                  notify(`Refresh failed: ${error.message}`);
+                }
+              }}
+            >
+              Refresh DB
+            </button>
+          ) : null}
           <button className="button button-secondary" type="button" onClick={signOut}>Logout</button>
           <button className="button button-primary" type="button" onClick={() => setProfileMenuOpen((v) => !v)}>Profile</button>
           {profileMenuOpen && (

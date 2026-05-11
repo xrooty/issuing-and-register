@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import EmptyState from "../components/EmptyState";
 
 const initial = { email: "", password: "", full_name: "", role: "", active: true, createLogin: true };
-const passwordInitial = { previousPassword: "", newPassword: "", confirmPassword: "" };
+const passwordInitial = { newPassword: "", confirmPassword: "" };
 
 export default function UsersView({
   users,
@@ -154,16 +154,6 @@ export default function UsersView({
                   <tr>
                     <td colSpan={5}>
                       <form className="inline-password-form" onSubmit={async (e) => { e.preventDefault(); await savePasswordReset(u.id); }}>
-                        <label>
-                          Previous password
-                          <input
-                            type="password"
-                            value={passwordForm.previousPassword}
-                            onChange={(e) => setPasswordForm((current) => ({ ...current, previousPassword: e.target.value }))}
-                            autoComplete="current-password"
-                            required
-                          />
-                        </label>
                         <label>
                           New password
                           <input

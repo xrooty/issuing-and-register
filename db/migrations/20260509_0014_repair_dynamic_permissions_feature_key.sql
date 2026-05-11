@@ -160,6 +160,10 @@ where role = 'super_admin';
 
 -- Older installs used hardcoded role CHECK constraints. Dynamic roles are now
 -- stored in public.roles, so these checks must not block custom role names.
+alter table public.users drop constraint if exists users_role_check;
+alter table public.role_permissions drop constraint if exists role_permissions_role_check;
+alter table public.role_data_scopes drop constraint if exists role_data_scopes_role_check;
+
 do $$
 declare
   constraint_record record;
@@ -218,6 +222,9 @@ select seed.name
 from (
   values
     ('dashboard'),
+    ('dashboard_export_register_csv'),
+    ('dashboard_backup_json'),
+    ('dashboard_refresh_db'),
     ('companies'),
     ('departments'),
     ('templates'),

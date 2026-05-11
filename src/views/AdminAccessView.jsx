@@ -16,6 +16,9 @@ const SCOPE_OPTIONS = [
 
 const MODULE_LABELS = {
   dashboard: "Dashboard",
+  dashboard_export_register_csv: "Export Register CSV",
+  dashboard_backup_json: "Backup JSON",
+  dashboard_refresh_db: "Refresh DB",
   companies: "Companies",
   departments: "Departments",
   templates: "Templates",

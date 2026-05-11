@@ -19,10 +19,13 @@ Run these in order:
 11. `db/migrations/20260508_0010_user_permission_overrides.sql`
 12. `db/migrations/20260509_0011_repair_rls_user_profiles_refs.sql`
 13. `db/migrations/20260509_0012_activity_logging_setting.sql`
+14. `db/migrations/20260509_0013_admin_user_auth_functions.sql`
+15. `db/migrations/20260509_0014_repair_dynamic_permissions_feature_key.sql`
+16. `db/migrations/20260509_0015_drop_legacy_role_check_constraints.sql`
 
 **Older DB Compatibility**
 
-If your live database was created from an older version of the project, run the canonical migrations through `20260508_0010_user_permission_overrides.sql`, then run `20260509_0011_repair_rls_user_profiles_refs.sql`, then run `20260509_0012_activity_logging_setting.sql`. The `0011` repair drops old RLS policies that may still reference `public.user_profiles` and recreates clean policies for the current `public.users` role model. The `0012` migration adds the activity-history switch while keeping existing `activity_log` rows unchanged. The older `20260507_fix_clients_schema_compat.sql` is kept only as legacy history.
+If your live database was created from an older version of the project, run the canonical migrations through `20260508_0010_user_permission_overrides.sql`, then run `20260509_0011_repair_rls_user_profiles_refs.sql`, `20260509_0012_activity_logging_setting.sql`, `20260509_0013_admin_user_auth_functions.sql`, `20260509_0014_repair_dynamic_permissions_feature_key.sql`, and `20260509_0015_drop_legacy_role_check_constraints.sql`. The `0011` repair drops old RLS policies that may still reference `public.user_profiles` and recreates clean policies for the current `public.users` role model. The `0012` migration adds the activity-history switch while keeping existing `activity_log` rows unchanged. The `0014` and `0015` repairs remove legacy hardcoded role constraints so dynamic roles can save rows in `role_permissions`. The older `20260507_fix_clients_schema_compat.sql` is kept only as legacy history.
 
 **Supabase Auth**
 
@@ -68,6 +71,15 @@ After running migrations:
 2. Run `select public.next_sequence('TEST-KEY');` twice and expect `1` then `2`.
 3. Confirm `client_fields` has seeded rows such as `client_name`, `phone`, `email`, `employer_name`.
 4. Hard refresh the browser if the app was already open.
+5. For dynamic role access, confirm this returns no rows:
+
+```sql
+select conname, pg_get_constraintdef(oid)
+from pg_constraint
+where conrelid = 'public.role_permissions'::regclass
+  and contype = 'c'
+  and conname = 'role_permissions_role_check';
+```
 
 **Legacy Files**
 
