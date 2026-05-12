@@ -1,12 +1,14 @@
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import EmptyState from "../components/EmptyState";
+import PaginationControls from "../components/PaginationControls";
 
-const initial = { email: "", password: "", full_name: "", role: "", active: true, createLogin: true };
+const initial = { email: "", password: "", full_name: "", role: "", department_name: "", active: true };
 const passwordInitial = { newPassword: "", confirmPassword: "" };
 
 export default function UsersView({
   users,
   roles = [],
+  departments = [],
   permissions,
   canResetPasswords = false,
   onAddUser,
@@ -15,24 +17,34 @@ export default function UsersView({
   onDeleteUser,
   onResetUserPassword,
 }) {
+  const departmentOptions = useMemo(
+    () => Array.from(new Set((departments || []).map((department) => String(department.name || department || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [departments],
+  );
   const [form, setForm] = useState(initial);
   const [editingUserId, setEditingUserId] = useState("");
-  const [editForm, setEditForm] = useState({ full_name: "", role: "", active: true });
+  const [editForm, setEditForm] = useState({ full_name: "", role: "", department_name: "", active: true });
   const [resettingUserId, setResettingUserId] = useState("");
   const [passwordForm, setPasswordForm] = useState(passwordInitial);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedUsers = users.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function startEditing(user) {
     setEditingUserId(user.id);
     setEditForm({
       full_name: user.full_name || "",
       role: user.role || "",
+      department_name: user.department_name || "",
       active: user.active !== false,
     });
   }
 
   function cancelEditing() {
     setEditingUserId("");
-    setEditForm({ full_name: "", role: "", active: true });
+    setEditForm({ full_name: "", role: "", department_name: "", active: true });
   }
 
   async function saveEditing(userId) {
@@ -63,8 +75,8 @@ export default function UsersView({
     <section className="view is-active">
       <div className="section-heading"><div><p className="eyebrow">Users</p><h2>User management</h2></div></div>
       {permissions?.create && (
-      <article className="panel">
-        <form className="form-grid" onSubmit={async (e) => { e.preventDefault(); const ok = await onAddUser(form); if (ok) setForm(initial); }}>
+      <article className="panel user-form-panel">
+        <form className="form-grid user-form-grid" onSubmit={async (e) => { e.preventDefault(); const ok = await onAddUser(form); if (ok) setForm(initial); }}>
           <label>Email<input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} required /></label>
           <label>Password<input type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} minLength={6} autoComplete="new-password" required /></label>
           <label>Name<input value={form.full_name} onChange={(e) => setForm((p) => ({ ...p, full_name: e.target.value }))} /></label>
@@ -75,23 +87,30 @@ export default function UsersView({
               {roles.map((role) => <option key={role} value={role}>{role}</option>)}
             </select>
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={form.createLogin}
-              onChange={(e) => setForm((p) => ({ ...p, createLogin: e.target.checked }))}
-              style={{ width: "auto" }}
-            />
-            Create login in Supabase Auth
+          <label>
+            Department
+            <select value={form.department_name} onChange={(e) => setForm((p) => ({ ...p, department_name: e.target.value }))}>
+              <option value="">Select department</option>
+              {departmentOptions.map((departmentName) => <option key={departmentName} value={departmentName}>{departmentName}</option>)}
+            </select>
           </label>
-          <p className="form-hint">Keep this checked for users who need to sign in. The same email is saved in Supabase Auth and public.users with the selected role.</p>
-          <button className="button button-primary" type="submit">Add User</button>
+          <div className="user-form-actions">
+            <button className="button button-primary" type="submit">Add User</button>
+          </div>
         </form>
       </article>
       )}
       <article className="panel">
-        {users.length ? <div className="table-wrap"><table><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>
-          {users.map((u) => {
+        {users.length ? <>
+          <PaginationControls
+            page={currentPage}
+            pageSize={pageSize}
+            totalItems={users.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+          <div className="table-wrap"><table><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Department</th><th>Status</th><th>Action</th></tr></thead><tbody>
+          {paginatedUsers.map((u) => {
             const isEditing = editingUserId === u.id;
             const isResettingPassword = resettingUserId === u.id;
             return (
@@ -118,6 +137,18 @@ export default function UsersView({
                         {roles.map((role) => <option key={role} value={role}>{role}</option>)}
                       </select>
                     ) : u.role}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <select
+                        className="table-input"
+                        value={editForm.department_name}
+                        onChange={(e) => setEditForm((current) => ({ ...current, department_name: e.target.value }))}
+                      >
+                        <option value="">Select department</option>
+                        {departmentOptions.map((departmentName) => <option key={departmentName} value={departmentName}>{departmentName}</option>)}
+                      </select>
+                    ) : (u.department_name || "-")}
                   </td>
                   <td>
                     {isEditing ? (
@@ -152,7 +183,7 @@ export default function UsersView({
                 </tr>
                 {isResettingPassword && (
                   <tr>
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <form className="inline-password-form" onSubmit={async (e) => { e.preventDefault(); await savePasswordReset(u.id); }}>
                         <label>
                           New password
@@ -187,7 +218,8 @@ export default function UsersView({
               </Fragment>
             );
           })}
-        </tbody></table></div> : <EmptyState message="No users found." />}
+        </tbody></table></div>
+        </> : <EmptyState message="No users found." />}
       </article>
     </section>
   );

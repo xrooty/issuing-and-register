@@ -1,0 +1,209 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/views/ActivityView.jsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=d05ab475"; const Fragment = __vite__cjsImport0_react_jsxDevRuntime["Fragment"]; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+var _s = $RefreshSig$();
+import __vite__cjsImport3_react from "/node_modules/.vite/deps/react.js?v=d05ab475"; const useState = __vite__cjsImport3_react["useState"];
+import EmptyState from "/src/components/EmptyState.jsx";
+import PaginationControls from "/src/components/PaginationControls.jsx";
+import { formatDate } from "/src/utils/lettering.js";
+export default function ActivityView({ entries }) {
+  _s();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedEntries = entries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  return /* @__PURE__ */ jsxDEV("section", { className: "view is-active", children: [
+    /* @__PURE__ */ jsxDEV("div", { className: "section-heading", children: /* @__PURE__ */ jsxDEV("div", { children: [
+      /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Activity" }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+        lineNumber: 34,
+        columnNumber: 45
+      }, this),
+      /* @__PURE__ */ jsxDEV("h2", { children: "Audit log" }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+        lineNumber: 34,
+        columnNumber: 80
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+      lineNumber: 34,
+      columnNumber: 40
+    }, this) }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+      lineNumber: 34,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDEV("article", { className: "panel", children: entries.length ? /* @__PURE__ */ jsxDEV(Fragment, { children: [
+      /* @__PURE__ */ jsxDEV(
+        PaginationControls,
+        {
+          page: currentPage,
+          pageSize,
+          totalItems: entries.length,
+          onPageChange: setPage,
+          onPageSizeChange: setPageSize
+        },
+        void 0,
+        false,
+        {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+          lineNumber: 38,
+          columnNumber: 13
+        },
+        this
+      ),
+      /* @__PURE__ */ jsxDEV("div", { className: "table-wrap", children: /* @__PURE__ */ jsxDEV("table", { children: [
+        /* @__PURE__ */ jsxDEV("thead", { children: /* @__PURE__ */ jsxDEV("tr", { children: [
+          /* @__PURE__ */ jsxDEV("th", { children: "When" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 28
+          }, this),
+          /* @__PURE__ */ jsxDEV("th", { children: "Action" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 41
+          }, this),
+          /* @__PURE__ */ jsxDEV("th", { children: "Who" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 56
+          }, this),
+          /* @__PURE__ */ jsxDEV("th", { children: "Client" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 68
+          }, this),
+          /* @__PURE__ */ jsxDEV("th", { children: "Issued By" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 83
+          }, this),
+          /* @__PURE__ */ jsxDEV("th", { children: "Entity" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 101
+          }, this),
+          /* @__PURE__ */ jsxDEV("th", { children: "Details" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 47,
+            columnNumber: 116
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+          lineNumber: 47,
+          columnNumber: 24
+        }, this) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+          lineNumber: 47,
+          columnNumber: 17
+        }, this),
+        /* @__PURE__ */ jsxDEV("tbody", { children: paginatedEntries.map(
+          (entry) => /* @__PURE__ */ jsxDEV("tr", { children: [
+            /* @__PURE__ */ jsxDEV("td", { children: formatDate(entry.created_at) }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 51,
+              columnNumber: 23
+            }, this),
+            /* @__PURE__ */ jsxDEV("td", { children: entry.action }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 52,
+              columnNumber: 23
+            }, this),
+            /* @__PURE__ */ jsxDEV("td", { children: entry.actor_name || "-" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 53,
+              columnNumber: 23
+            }, this),
+            /* @__PURE__ */ jsxDEV("td", { children: entry.client_name || "-" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 54,
+              columnNumber: 23
+            }, this),
+            /* @__PURE__ */ jsxDEV("td", { children: entry.issued_by_name || "-" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 55,
+              columnNumber: 23
+            }, this),
+            /* @__PURE__ */ jsxDEV("td", { children: entry.entity }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 56,
+              columnNumber: 23
+            }, this),
+            /* @__PURE__ */ jsxDEV("td", { children: entry.details }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+              lineNumber: 57,
+              columnNumber: 23
+            }, this)
+          ] }, entry.id, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+            lineNumber: 50,
+            columnNumber: 17
+          }, this)
+        ) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+          lineNumber: 48,
+          columnNumber: 17
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+        lineNumber: 46,
+        columnNumber: 15
+      }, this) }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+        lineNumber: 45,
+        columnNumber: 13
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+      lineNumber: 37,
+      columnNumber: 9
+    }, this) : /* @__PURE__ */ jsxDEV(EmptyState, { message: "No activity log entries yet." }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+      lineNumber: 64,
+      columnNumber: 9
+    }, this) }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+      lineNumber: 35,
+      columnNumber: 7
+    }, this)
+  ] }, void 0, true, {
+    fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx",
+    lineNumber: 33,
+    columnNumber: 5
+  }, this);
+}
+_s(ActivityView, "GsA3PafG7EXfJBBJReLOK91weMM=");
+_c = ActivityView;
+var _c;
+$RefreshReg$(_c, "ActivityView");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/dell/Desktop/jzarr_letter/src/views/ActivityView.jsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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QUFBQTtBQUFBO0FBQUEsbUJBQWlDO0FBQUEsWUFDakMsdUJBQUMsUUFBSUwsZ0JBQU1NLFVBQVg7QUFBQTtBQUFBO0FBQUE7QUFBQSxtQkFBa0I7QUFBQSxZQUNsQix1QkFBQyxRQUFJTixnQkFBTU8sV0FBWDtBQUFBO0FBQUE7QUFBQTtBQUFBLG1CQUFtQjtBQUFBLGVBUFpQLE1BQU1RLElBQWY7QUFBQTtBQUFBO0FBQUE7QUFBQSxpQkFRQTtBQUFBLFFBQ0QsS0FYSDtBQUFBO0FBQUE7QUFBQTtBQUFBLGVBWUE7QUFBQSxXQWRGO0FBQUE7QUFBQTtBQUFBO0FBQUEsYUFlQSxLQWhCRjtBQUFBO0FBQUE7QUFBQTtBQUFBLGFBaUJBO0FBQUEsU0F6QkY7QUFBQTtBQUFBO0FBQUE7QUFBQSxXQTBCQSxJQUNFLHVCQUFDLGNBQVcsU0FBUSxrQ0FBcEI7QUFBQTtBQUFBO0FBQUE7QUFBQSxXQUFrRCxLQTdCeEQ7QUFBQTtBQUFBO0FBQUE7QUFBQSxXQThCQTtBQUFBLE9BaENGO0FBQUE7QUFBQTtBQUFBO0FBQUEsU0FpQ0E7QUFFSjtBQUFDdkIsR0EzQ3VCRixjQUFZO0FBQUEsS0FBWkE7QUFBWSxJQUFBMEI7QUFBQSxhQUFBQSxJQUFBIiwibmFtZXMiOlsidXNlU3RhdGUiLCJFbXB0eVN0YXRlIiwiUGFnaW5hdGlvbkNvbnRyb2xzIiwiZm9ybWF0RGF0ZSIsIkFjdGl2aXR5VmlldyIsImVudHJpZXMiLCJfcyIsInBhZ2UiLCJzZXRQYWdlIiwicGFnZVNpemUiLCJzZXRQYWdlU2l6ZSIsInRvdGFsUGFnZXMiLCJNYXRoIiwibWF4IiwiY2VpbCIsImxlbmd0aCIsImN1cnJlbnRQYWdlIiwibWluIiwicGFnaW5hdGVkRW50cmllcyIsInNsaWNlIiwibWFwIiwiZW50cnkiLCJjcmVhdGVkX2F0IiwiYWN0aW9uIiwiYWN0b3JfbmFtZSIsImNsaWVudF9uYW1lIiwiaXNzdWVkX2J5X25hbWUiLCJlbnRpdHkiLCJkZXRhaWxzIiwiaWQiLCJfYyJdLCJpZ25vcmVMaXN0IjpbXSwic291cmNlcyI6WyJBY3Rpdml0eVZpZXcuanN4Il0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IHVzZVN0YXRlIH0gZnJvbSBcInJlYWN0XCI7XG5pbXBvcnQgRW1wdHlTdGF0ZSBmcm9tIFwiLi4vY29tcG9uZW50cy9FbXB0eVN0YXRlXCI7XG5pbXBvcnQgUGFnaW5hdGlvbkNvbnRyb2xzIGZyb20gXCIuLi9jb21wb25lbnRzL1BhZ2luYXRpb25Db250cm9sc1wiO1xuaW1wb3J0IHsgZm9ybWF0RGF0ZSB9IGZyb20gXCIuLi91dGlscy9sZXR0ZXJpbmdcIjtcblxuZXhwb3J0IGRlZmF1bHQgZnVuY3Rpb24gQWN0aXZpdHlWaWV3KHsgZW50cmllcyB9KSB7XG4gIGNvbnN0IFtwYWdlLCBzZXRQYWdlXSA9IHVzZVN0YXRlKDEpO1xuICBjb25zdCBbcGFnZVNpemUsIHNldFBhZ2VTaXplXSA9IHVzZVN0YXRlKDEwKTtcbiAgY29uc3QgdG90YWxQYWdlcyA9IE1hdGgubWF4KDEsIE1hdGguY2VpbChlbnRyaWVzLmxlbmd0aCAvIHBhZ2VTaXplKSk7XG4gIGNvbnN0IGN1cnJlbnRQYWdlID0gTWF0aC5taW4ocGFnZSwgdG90YWxQYWdlcyk7XG4gIGNvbnN0IHBhZ2luYXRlZEVudHJpZXMgPSBlbnRyaWVzLnNsaWNlKChjdXJyZW50UGFnZSAtIDEpICogcGFnZVNpemUsIGN1cnJlbnRQYWdlICogcGFnZVNpemUpO1xuXG4gIHJldHVybiAoXG4gICAgPHNlY3Rpb24gY2xhc3NOYW1lPVwidmlldyBpcy1hY3RpdmVcIj5cbiAgICAgIDxkaXYgY2xhc3NOYW1lPVwic2VjdGlvbi1oZWFkaW5nXCI+PGRpdj48cCBjbGFzc05hbWU9XCJleWVicm93XCI+QWN0aXZpdHk8L3A+PGgyPkF1ZGl0IGxvZzwvaDI+PC9kaXY+PC9kaXY+XG4gICAgICA8YXJ0aWNsZSBjbGFzc05hbWU9XCJwYW5lbFwiPlxuICAgICAgICB7ZW50cmllcy5sZW5ndGggPyAoXG4gICAgICAgICAgPD5cbiAgICAgICAgICAgIDxQYWdpbmF0aW9uQ29udHJvbHNcbiAgICAgICAgICAgICAgcGFnZT17Y3VycmVudFBhZ2V9XG4gICAgICAgICAgICAgIHBhZ2VTaXplPXtwYWdlU2l6ZX1cbiAgICAgICAgICAgICAgdG90YWxJdGVtcz17ZW50cmllcy5sZW5ndGh9XG4gICAgICAgICAgICAgIG9uUGFnZUNoYW5nZT17c2V0UGFnZX1cbiAgICAgICAgICAgICAgb25QYWdlU2l6ZUNoYW5nZT17c2V0UGFnZVNpemV9XG4gICAgICAgICAgICAvPlxuICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJ0YWJsZS13cmFwXCI+XG4gICAgICAgICAgICAgIDx0YWJsZT5cbiAgICAgICAgICAgICAgICA8dGhlYWQ+PHRyPjx0aD5XaGVuPC90aD48dGg+QWN0aW9uPC90aD48dGg+V2hvPC90aD48dGg+Q2xpZW50PC90aD48dGg+SXNzdWVkIEJ5PC90aD48dGg+RW50aXR5PC90aD48dGg+RGV0YWlsczwvdGg+PC90cj48L3RoZWFkPlxuICAgICAgICAgICAgICAgIDx0Ym9keT5cbiAgICAgICAgICAgICAgICAgIHtwYWdpbmF0ZWRFbnRyaWVzLm1hcCgoZW50cnkpID0+IChcbiAgICAgICAgICAgICAgICAgICAgPHRyIGtleT17ZW50cnkuaWR9PlxuICAgICAgICAgICAgICAgICAgICAgIDx0ZD57Zm9ybWF0RGF0ZShlbnRyeS5jcmVhdGVkX2F0KX08L3RkPlxuICAgICAgICAgICAgICAgICAgICAgIDx0ZD57ZW50cnkuYWN0aW9ufTwvdGQ+XG4gICAgICAgICAgICAgICAgICAgICAgPHRkPntlbnRyeS5hY3Rvcl9uYW1lIHx8IFwiLVwifTwvdGQ+XG4gICAgICAgICAgICAgICAgICAgICAgPHRkPntlbnRyeS5jbGllbnRfbmFtZSB8fCBcIi1cIn08L3RkPlxuICAgICAgICAgICAgICAgICAgICAgIDx0ZD57ZW50cnkuaXNzdWVkX2J5X25hbWUgfHwgXCItXCJ9PC90ZD5cbiAgICAgICAgICAgICAgICAgICAgICA8dGQ+e2VudHJ5LmVudGl0eX08L3RkPlxuICAgICAgICAgICAgICAgICAgICAgIDx0ZD57ZW50cnkuZGV0YWlsc308L3RkPlxuICAgICAgICAgICAgICAgICAgICA8L3RyPlxuICAgICAgICAgICAgICAgICAgKSl9XG4gICAgICAgICAgICAgICAgPC90Ym9keT5cbiAgICAgICAgICAgICAgPC90YWJsZT5cbiAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgIDwvPlxuICAgICAgICApIDogPEVtcHR5U3RhdGUgbWVzc2FnZT1cIk5vIGFjdGl2aXR5IGxvZyBlbnRyaWVzIHlldC5cIiAvPn1cbiAgICAgIDwvYXJ0aWNsZT5cbiAgICA8L3NlY3Rpb24+XG4gICk7XG59XG4iXSwiZmlsZSI6IkM6L1VzZXJzL2RlbGwvRGVza3RvcC9qemFycl9sZXR0ZXIvc3JjL3ZpZXdzL0FjdGl2aXR5Vmlldy5qc3gifQ==

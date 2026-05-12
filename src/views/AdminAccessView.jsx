@@ -10,8 +10,7 @@ const ACTIONS = [
 const SCOPE_OPTIONS = [
   { value: "own_data", label: "Own Personal Data" },
   { value: "own_department", label: "Own Department" },
-  { value: "selected_departments", label: "Selected Departments" },
-  { value: "all_departments", label: "All Departments" },
+  { value: "selected_departments", label: "Selected Department" },
 ];
 
 const MODULE_LABELS = {
@@ -32,6 +31,7 @@ const MODULE_LABELS = {
   activity: "Activity",
   activity_settings: "Activity History Control",
   admin: "Admin",
+  client_fields: "Client Fields",
 };
 
 function cleanDepartments(list = []) {
@@ -40,6 +40,10 @@ function cleanDepartments(list = []) {
 
 function normalizeRoleName(role) {
   return String(role || "").trim();
+}
+
+function normalizeScopeType(scopeType) {
+  return ["own_data", "own_department", "selected_departments"].includes(scopeType) ? scopeType : "own_department";
 }
 
 function buildDraft({ role, modules, allPermissions, roleDataScopes }) {
@@ -63,8 +67,8 @@ function buildDraft({ role, modules, allPermissions, roleDataScopes }) {
       can_edit: !!permissions.edit,
       can_delete: !!permissions.delete,
       scope_id: scope.id || "",
-      scope_type: scope.scope_type || "own_department",
-      department_names: cleanDepartments(scope.department_names || []),
+      scope_type: normalizeScopeType(scope.scope_type),
+      department_names: normalizeScopeType(scope.scope_type) === "selected_departments" ? cleanDepartments(scope.department_names || []) : [],
     };
   });
 }
@@ -76,16 +80,16 @@ function sameDraft(left = [], right = []) {
     can_create: !!row.can_create,
     can_edit: !!row.can_edit,
     can_delete: !!row.can_delete,
-    scope_type: row.scope_type || "own_department",
-    department_names: cleanDepartments(row.department_names || []),
+    scope_type: normalizeScopeType(row.scope_type),
+    department_names: normalizeScopeType(row.scope_type) === "selected_departments" ? cleanDepartments(row.department_names || []) : [],
   }))) === JSON.stringify(right.map((row) => ({
     module: row.module,
     can_view: !!row.can_view,
     can_create: !!row.can_create,
     can_edit: !!row.can_edit,
     can_delete: !!row.can_delete,
-    scope_type: row.scope_type || "own_department",
-    department_names: cleanDepartments(row.department_names || []),
+    scope_type: normalizeScopeType(row.scope_type),
+    department_names: normalizeScopeType(row.scope_type) === "selected_departments" ? cleanDepartments(row.department_names || []) : [],
   })));
 }
 
@@ -182,7 +186,7 @@ export default function AdminAccessView({
         </div>
       </div>
       {isAdminRole ? <p className="form-hint">Admin always has full access. Select another role to edit permissions.</p> : <p className="form-hint">Draft mode is active. Update permissions or data scope, then save changes.</p>}
-      <div className="table-wrap">
+      <div className="table-wrap admin-permissions-table">
         <table>
           <thead><tr><th>Module</th><th>Data Scope</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th></tr></thead>
           <tbody>

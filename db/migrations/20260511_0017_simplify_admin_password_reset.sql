@@ -28,9 +28,7 @@ begin
   end if;
 
   if length(coalesce(new_password, '')) < 6 then
-    raise exception 'Password must be at least 6 characters.';
-  end if;
-
+git push -u origin dev-2
   select public.users.email
   into target_email
   from public.users

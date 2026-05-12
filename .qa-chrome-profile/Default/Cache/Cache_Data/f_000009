@@ -1,0 +1,648 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/views/CompaniesView.jsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=d05ab475"; const Fragment = __vite__cjsImport0_react_jsxDevRuntime["Fragment"]; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+var _s = $RefreshSig$();
+import __vite__cjsImport3_react from "/node_modules/.vite/deps/react.js?v=d05ab475"; const useEffect = __vite__cjsImport3_react["useEffect"]; const useState = __vite__cjsImport3_react["useState"];
+import EmptyState from "/src/components/EmptyState.jsx";
+import { DEFAULT_REFERENCE_PATTERN } from "/src/utils/lettering.js";
+const initialForm = {
+  name: "",
+  shortCode: "",
+  address: "",
+  phone: "",
+  email: "",
+  footerText: "",
+  letterNoPattern: DEFAULT_REFERENCE_PATTERN
+};
+export default function CompaniesView({
+  companies,
+  onAddCompany,
+  onUpdateCompany,
+  onDeleteCompany,
+  onBulkDeleteCompanies
+}) {
+  _s();
+  const [form, setForm] = useState(initialForm);
+  const [editingCompanyId, setEditingCompanyId] = useState("");
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
+  useEffect(() => {
+    const companySet = new Set(companies.map((company) => company.id));
+    setSelectedCompanyIds((current) => current.filter((id) => companySet.has(id)));
+    if (editingCompanyId && !companySet.has(editingCompanyId)) {
+      setEditingCompanyId("");
+      setForm(initialForm);
+    }
+  }, [companies, editingCompanyId]);
+  function resetCreateMode() {
+    setEditingCompanyId("");
+    setForm(initialForm);
+  }
+  function loadCompanyForEdit(company) {
+    if (!company) {
+      return;
+    }
+    setEditingCompanyId(company.id);
+    setForm({
+      name: company.name || "",
+      shortCode: company.shortCode || "",
+      address: company.address || "",
+      phone: company.phone || "",
+      email: company.email || "",
+      footerText: company.footerText || "",
+      letterNoPattern: company.letterNoPattern || DEFAULT_REFERENCE_PATTERN
+    });
+  }
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (editingCompanyId && onUpdateCompany) {
+      const updated = await onUpdateCompany({
+        id: editingCompanyId,
+        ...form
+      });
+      if (updated) {
+        resetCreateMode();
+      }
+      return;
+    }
+    await onAddCompany(form);
+    setForm(initialForm);
+  }
+  async function handleDeleteCurrentCompany() {
+    if (!editingCompanyId || !onDeleteCompany) {
+      return;
+    }
+    const deleted = await onDeleteCompany(editingCompanyId);
+    if (!deleted) {
+      return;
+    }
+    setSelectedCompanyIds((current) => current.filter((id) => id !== editingCompanyId));
+    resetCreateMode();
+  }
+  async function handleDeleteCompanyById(companyId) {
+    if (!onDeleteCompany) {
+      return;
+    }
+    const deleted = await onDeleteCompany(companyId);
+    if (!deleted) {
+      return;
+    }
+    setSelectedCompanyIds((current) => current.filter((id) => id !== companyId));
+    if (editingCompanyId === companyId) {
+      resetCreateMode();
+    }
+  }
+  function toggleCompanySelection(companyId) {
+    setSelectedCompanyIds(
+      (current) => current.includes(companyId) ? current.filter((id) => id !== companyId) : [...current, companyId]
+    );
+  }
+  function toggleSelectAllCompanies() {
+    if (!companies.length) {
+      return;
+    }
+    setSelectedCompanyIds((current) => current.length === companies.length ? [] : companies.map((company) => company.id));
+  }
+  async function handleBulkDeleteCompanies() {
+    if (!onBulkDeleteCompanies || !selectedCompanyIds.length) {
+      return;
+    }
+    const deleted = await onBulkDeleteCompanies(selectedCompanyIds);
+    if (!deleted) {
+      return;
+    }
+    const deletedSet = new Set(selectedCompanyIds);
+    setSelectedCompanyIds([]);
+    if (editingCompanyId && deletedSet.has(editingCompanyId)) {
+      resetCreateMode();
+    }
+  }
+  return /* @__PURE__ */ jsxDEV("section", { className: "view is-active", children: [
+    /* @__PURE__ */ jsxDEV("div", { className: "section-heading", children: /* @__PURE__ */ jsxDEV("div", { children: [
+      /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Site Management" }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+        lineNumber: 162,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDEV("h2", { children: "Companies" }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+        lineNumber: 163,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+      lineNumber: 161,
+      columnNumber: 9
+    }, this) }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+      lineNumber: 160,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDEV("div", { className: "content-grid", children: [
+      /* @__PURE__ */ jsxDEV("article", { className: "panel", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "panel-heading", children: /* @__PURE__ */ jsxDEV("div", { children: [
+          /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: editingCompanyId ? "Edit" : "Create" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 171,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("h3", { children: editingCompanyId ? "Edit company" : "Add company" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 172,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 170,
+          columnNumber: 13
+        }, this) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 169,
+          columnNumber: 11
+        }, this),
+        /* @__PURE__ */ jsxDEV("form", { className: "form-grid", onSubmit: handleSubmit, children: [
+          /* @__PURE__ */ jsxDEV("label", { children: [
+            "Company name",
+            /* @__PURE__ */ jsxDEV(
+              "input",
+              {
+                required: true,
+                type: "text",
+                value: form.name,
+                onChange: (event) => setForm((current) => ({ ...current, name: event.target.value })),
+                placeholder: "Crescent Textile Group"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 179,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 177,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("label", { children: [
+            "Short code",
+            /* @__PURE__ */ jsxDEV(
+              "input",
+              {
+                required: true,
+                type: "text",
+                maxLength: 6,
+                value: form.shortCode,
+                onChange: (event) => setForm((current) => ({ ...current, shortCode: event.target.value.toUpperCase() })),
+                placeholder: "CTG"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 189,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 187,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("label", { className: "span-2", children: [
+            "Reference no format (default)",
+            /* @__PURE__ */ jsxDEV(
+              "input",
+              {
+                type: "text",
+                value: form.letterNoPattern,
+                onChange: (event) => setForm((current) => ({ ...current, letterNoPattern: event.target.value })),
+                placeholder: "{{company_code}}/{{department_code}}/{{template_code}}/{{year}}-{{month}}/{{sequence3}}"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 200,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 198,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("label", { className: "span-2", children: [
+            "Address",
+            /* @__PURE__ */ jsxDEV(
+              "textarea",
+              {
+                rows: 3,
+                value: form.address,
+                onChange: (event) => setForm((current) => ({ ...current, address: event.target.value })),
+                placeholder: "Street, city, country"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 209,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 207,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("label", { children: [
+            "Phone",
+            /* @__PURE__ */ jsxDEV(
+              "input",
+              {
+                type: "text",
+                value: form.phone,
+                onChange: (event) => setForm((current) => ({ ...current, phone: event.target.value })),
+                placeholder: "+92 300 0000000"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 218,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 216,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("label", { children: [
+            "Email",
+            /* @__PURE__ */ jsxDEV(
+              "input",
+              {
+                type: "email",
+                value: form.email,
+                onChange: (event) => setForm((current) => ({ ...current, email: event.target.value })),
+                placeholder: "hr@company.com"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 227,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 225,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("label", { className: "span-2", children: [
+            "Footer text",
+            /* @__PURE__ */ jsxDEV(
+              "textarea",
+              {
+                rows: 3,
+                value: form.footerText,
+                onChange: (event) => setForm((current) => ({ ...current, footerText: event.target.value })),
+                placeholder: "Official footer or disclaimer"
+              },
+              void 0,
+              false,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 236,
+                columnNumber: 15
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 234,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("div", { className: "button-row span-2", children: [
+            /* @__PURE__ */ jsxDEV("button", { className: "button button-primary", type: "submit", children: editingCompanyId ? "Update company" : "Save company" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 244,
+              columnNumber: 15
+            }, this),
+            editingCompanyId ? /* @__PURE__ */ jsxDEV(Fragment, { children: [
+              /* @__PURE__ */ jsxDEV("button", { className: "button button-secondary", type: "button", onClick: resetCreateMode, children: "Cancel edit" }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 249,
+                columnNumber: 19
+              }, this),
+              /* @__PURE__ */ jsxDEV("button", { className: "button button-secondary", type: "button", onClick: handleDeleteCurrentCompany, children: "Delete company" }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 252,
+                columnNumber: 19
+              }, this)
+            ] }, void 0, true, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 248,
+              columnNumber: 15
+            }, this) : null
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 243,
+            columnNumber: 13
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 176,
+          columnNumber: 11
+        }, this),
+        /* @__PURE__ */ jsxDEV("div", { className: "helper-note", style: { marginTop: 14 }, children: [
+          "Format tokens: ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{company_code}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 261,
+            columnNumber: 28
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{department_code}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 261,
+            columnNumber: 63
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{template_code}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 261,
+            columnNumber: 101
+          }, this),
+          ",",
+          " ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{year}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 262,
+            columnNumber: 13
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{yy}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 262,
+            columnNumber: 40
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{month}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 262,
+            columnNumber: 65
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{day}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 262,
+            columnNumber: 93
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{sequence}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 262,
+            columnNumber: 119
+          }, this),
+          ",",
+          " ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{sequence3}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 263,
+            columnNumber: 13
+          }, this),
+          ", ",
+          /* @__PURE__ */ jsxDEV("code", { children: "{{sequence4}}" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 263,
+            columnNumber: 45
+          }, this),
+          ". You can also use underscores like ",
+          /* @__PURE__ */ jsxDEV("code", { children: "____" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 263,
+            columnNumber: 111
+          }, this),
+          " for auto numbering."
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 260,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+        lineNumber: 168,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDEV("article", { className: "panel", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "panel-heading", children: [
+          /* @__PURE__ */ jsxDEV("div", { children: [
+            /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Directory" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 270,
+              columnNumber: 15
+            }, this),
+            /* @__PURE__ */ jsxDEV("h3", { children: "Company list" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 271,
+              columnNumber: 15
+            }, this)
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 269,
+            columnNumber: 13
+          }, this),
+          companies.length ? /* @__PURE__ */ jsxDEV("div", { className: "row-actions", children: [
+            /* @__PURE__ */ jsxDEV("button", { className: "button button-secondary", type: "button", onClick: toggleSelectAllCompanies, children: selectedCompanyIds.length === companies.length ? "Clear all" : "Select all" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 275,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV(
+              "button",
+              {
+                className: "button button-secondary",
+                type: "button",
+                onClick: handleBulkDeleteCompanies,
+                disabled: !selectedCompanyIds.length,
+                children: [
+                  "Delete selected (",
+                  selectedCompanyIds.length,
+                  ")"
+                ]
+              },
+              void 0,
+              true,
+              {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 278,
+                columnNumber: 17
+              },
+              this
+            )
+          ] }, void 0, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 274,
+            columnNumber: 13
+          }, this) : null
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 268,
+          columnNumber: 11
+        }, this),
+        companies.length ? /* @__PURE__ */ jsxDEV("div", { className: "card-list", children: companies.map((company) => {
+          const isSelected = selectedCompanyIds.includes(company.id);
+          return /* @__PURE__ */ jsxDEV("article", { className: "entity-card", children: [
+            /* @__PURE__ */ jsxDEV("div", { className: "template-select-row", children: /* @__PURE__ */ jsxDEV("label", { className: "template-select-checkbox", children: [
+              /* @__PURE__ */ jsxDEV(
+                "input",
+                {
+                  type: "checkbox",
+                  checked: isSelected,
+                  onChange: () => toggleCompanySelection(company.id)
+                },
+                void 0,
+                false,
+                {
+                  fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                  lineNumber: 299,
+                  columnNumber: 25
+                },
+                this
+              ),
+              /* @__PURE__ */ jsxDEV("span", { children: "Select" }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 304,
+                columnNumber: 25
+              }, this)
+            ] }, void 0, true, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 298,
+              columnNumber: 23
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 297,
+              columnNumber: 21
+            }, this),
+            /* @__PURE__ */ jsxDEV("h4", { children: company.name }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 307,
+              columnNumber: 21
+            }, this),
+            /* @__PURE__ */ jsxDEV("p", { children: company.address || "No address added" }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 308,
+              columnNumber: 21
+            }, this),
+            /* @__PURE__ */ jsxDEV("div", { className: "entity-meta", children: [
+              /* @__PURE__ */ jsxDEV("span", { className: "chip", children: company.shortCode }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 310,
+                columnNumber: 23
+              }, this),
+              company.email ? /* @__PURE__ */ jsxDEV("span", { className: "chip", children: company.email }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 311,
+                columnNumber: 40
+              }, this) : null,
+              company.letterNoPattern ? /* @__PURE__ */ jsxDEV("span", { className: "chip chip--tone", children: [
+                "Ref: ",
+                company.letterNoPattern
+              ] }, void 0, true, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 312,
+                columnNumber: 50
+              }, this) : null
+            ] }, void 0, true, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 309,
+              columnNumber: 21
+            }, this),
+            /* @__PURE__ */ jsxDEV("div", { className: "row-actions", children: [
+              /* @__PURE__ */ jsxDEV("button", { className: "button button-secondary", type: "button", onClick: () => loadCompanyForEdit(company), children: "Edit" }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 315,
+                columnNumber: 23
+              }, this),
+              /* @__PURE__ */ jsxDEV("button", { className: "button button-secondary", type: "button", onClick: () => handleDeleteCompanyById(company.id), children: "Delete" }, void 0, false, {
+                fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+                lineNumber: 318,
+                columnNumber: 23
+              }, this)
+            ] }, void 0, true, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+              lineNumber: 314,
+              columnNumber: 21
+            }, this)
+          ] }, company.id, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+            lineNumber: 296,
+            columnNumber: 17
+          }, this);
+        }) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 291,
+          columnNumber: 11
+        }, this) : /* @__PURE__ */ jsxDEV(EmptyState, { message: "Add the first company to start building the system." }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+          lineNumber: 327,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+        lineNumber: 267,
+        columnNumber: 9
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+      lineNumber: 167,
+      columnNumber: 7
+    }, this)
+  ] }, void 0, true, {
+    fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx",
+    lineNumber: 159,
+    columnNumber: 5
+  }, this);
+}
+_s(CompaniesView, "7Yubr/8itjZX0mV43r9ucMKwcWk=");
+_c = CompaniesView;
+var _c;
+$RefreshReg$(_c, "CompaniesView");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/dell/Desktop/jzarr_letter/src/views/CompaniesView.jsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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YXRlIiwiREVGQVVMVF9SRUZFUkVOQ0VfUEFUVEVSTiIsImluaXRpYWxGb3JtIiwibmFtZSIsInNob3J0Q29kZSIsImFkZHJlc3MiLCJwaG9uZSIsImVtYWlsIiwiZm9vdGVyVGV4dCIsImxldHRlck5vUGF0dGVybiIsIkNvbXBhbmllc1ZpZXciLCJjb21wYW5pZXMiLCJvbkFkZENvbXBhbnkiLCJvblVwZGF0ZUNvbXBhbnkiLCJvbkRlbGV0ZUNvbXBhbnkiLCJvbkJ1bGtEZWxldGVDb21wYW5pZXMiLCJfcyIsImZvcm0iLCJzZXRGb3JtIiwiZWRpdGluZ0NvbXBhbnlJZCIsInNldEVkaXRpbmdDb21wYW55SWQiLCJzZWxlY3RlZENvbXBhbnlJZHMiLCJzZXRTZWxlY3RlZENvbXBhbnlJZHMiLCJjb21wYW55U2V0IiwiU2V0IiwibWFwIiwiY29tcGFueSIsImlkIiwiY3VycmVudCIsImZpbHRlciIsImhhcyIsInJlc2V0Q3JlYXRlTW9kZSIsImxvYWRDb21wYW55Rm9yRWRpdCIsImhhbmRsZVN1Ym1pdCIsImV2ZW50IiwicHJldmVudERlZmF1bHQiLCJ1cGRhdGVkIiwiaGFuZGxlRGVsZXRlQ3VycmVudENvbXBhbnkiLCJkZWxldGVkIiwiaGFuZGxlRGVsZXRlQ29tcGFueUJ5SWQiLCJjb21wYW55SWQiLCJ0b2dnbGVDb21wYW55U2VsZWN0aW9uIiwiaW5jbHVkZXMiLCJ0b2dnbGVTZWxlY3RBbGxDb21wYW5pZXMiLCJsZW5ndGgiLCJoYW5kbGVCdWxrRGVsZXRlQ29tcGFuaWVzIiwiZGVsZXRlZFNldCIsInRhcmdldCIsInZhbHVlIiwidG9VcHBlckNhc2UiLCJtYXJnaW5Ub3AiLCJpc1NlbGVjdGVkIiwiX2MiXSwiaWdub3JlTGlzdCI6W10sInNvdXJjZXMiOlsiQ29tcGFuaWVzVmlldy5qc3giXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgdXNlRWZmZWN0LCB1c2VTdGF0ZSB9IGZyb20gXCJyZWFjdFwiO1xyXG5pbXBvcnQgRW1wdHlTdGF0ZSBmcm9tIFwiLi4vY29tcG9uZW50cy9FbXB0eVN0YXRlXCI7XHJcbmltcG9ydCB7IERFRkFVTFRfUkVGRVJFTkNFX1BBVFRFUk4gfSBmcm9tIFwiLi4vdXRpbHMvbGV0dGVyaW5nXCI7XHJcblxyXG5jb25zdCBpbml0aWFsRm9ybSA9IHtcclxuICBuYW1lOiBcIlwiLFxyXG4gIHNob3J0Q29kZTogXCJcIixcclxuICBhZGRyZXNzOiBcIlwiLFxyXG4gIHBob25lOiBcIlwiLFxyXG4gIGVtYWlsOiBcIlwiLFxyXG4gIGZvb3RlclRleHQ6IFwiXCIsXHJcbiAgbGV0dGVyTm9QYXR0ZXJuOiBERUZBVUxUX1JFRkVSRU5DRV9QQVRURVJOLFxyXG59O1xyXG5cclxuZXhwb3J0IGRlZmF1bHQgZnVuY3Rpb24gQ29tcGFuaWVzVmlldyh7XHJcbiAgY29tcGFuaWVzLFxyXG4gIG9uQWRkQ29tcGFueSxcclxuICBvblVwZGF0ZUNvbXBhbnksXHJcbiAgb25EZWxldGVDb21wYW55LFxyXG4gIG9uQnVsa0RlbGV0ZUNvbXBhbmllcyxcclxufSkge1xyXG4gIGNvbnN0IFtmb3JtLCBzZXRGb3JtXSA9IHVzZVN0YXRlKGluaXRpYWxGb3JtKTtcclxuICBjb25zdCBbZWRpdGluZ0NvbXBhbnlJZCwgc2V0RWRpdGluZ0NvbXBhbnlJZF0gPSB1c2VTdGF0ZShcIlwiKTtcclxuICBjb25zdCBbc2VsZWN0ZWRDb21wYW55SWRzLCBzZXRTZWxlY3RlZENvbXBhbnlJZHNdID0gdXNlU3RhdGUoW10pO1xyXG5cclxuICB1c2VFZmZlY3QoKCkgPT4ge1xyXG4gICAgY29uc3QgY29tcGFueVNldCA9IG5ldyBTZXQoY29tcGFuaWVzLm1hcCgoY29tcGFueSkgPT4gY29tcGFueS5pZCkpO1xyXG4gICAgc2V0U2VsZWN0ZWRDb21wYW55SWRzKChjdXJyZW50KSA9PiBjdXJyZW50LmZpbHRlcigoaWQpID0+IGNvbXBhbnlTZXQuaGFzKGlkKSkpO1xyXG5cclxuICAgIGlmIChlZGl0aW5nQ29tcGFueUlkICYmICFjb21wYW55U2V0LmhhcyhlZGl0aW5nQ29tcGFueUlkKSkge1xyXG4gICAgICBzZXRFZGl0aW5nQ29tcGFueUlkKFwiXCIpO1xyXG4gICAgICBzZXRGb3JtKGluaXRpYWxGb3JtKTtcclxuICAgIH1cclxuICB9LCBbY29tcGFuaWVzLCBlZGl0aW5nQ29tcGFueUlkXSk7XHJcblxyXG4gIGZ1bmN0aW9uIHJlc2V0Q3JlYXRlTW9kZSgpIHtcclxuICAgIHNldEVkaXRpbmdDb21wYW55SWQoXCJcIik7XHJcbiAgICBzZXRGb3JtKGluaXRpYWxGb3JtKTtcclxuICB9XHJcblxyXG4gIGZ1bmN0aW9uIGxvYWRDb21wYW55Rm9yRWRpdChjb21wYW55KSB7XHJcbiAgICBpZiAoIWNvbXBhbnkpIHtcclxuICAgICAgcmV0dXJuO1xyXG4gICAgfVxyXG5cclxuICAgIHNldEVkaXRpbmdDb21wYW55SWQoY29tcGFueS5pZCk7XHJcbiAgICBzZXRGb3JtKHtcclxuICAgICAgbmFtZTogY29tcGFueS5uYW1lIHx8IFwiXCIsXHJcbiAgICAgIHNob3J0Q29kZTogY29tcGFueS5zaG9ydENvZGUgfHwgXCJcIixcclxuICAgICAgYWRkcmVzczogY29tcGFueS5hZGRyZXNzIHx8IFwiXCIsXHJcbiAgICAgIHBob25lOiBjb21wYW55LnBob25lIHx8IFwiXCIsXHJcbiAgICAgIGVtYWlsOiBjb21wYW55LmVtYWlsIHx8IFwiXCIsXHJcbiAgICAgIGZvb3RlclRleHQ6IGNvbXBhbnkuZm9vdGVyVGV4dCB8fCBcIlwiLFxyXG4gICAgICBsZXR0ZXJOb1BhdHRlcm46IGNvbXBhbnkubGV0dGVyTm9QYXR0ZXJuIHx8IERFRkFVTFRfUkVGRVJFTkNFX1BBVFRFUk4sXHJcbiAgICB9KTtcclxuICB9XHJcblxyXG4gIGFzeW5jIGZ1bmN0aW9uIGhhbmRsZVN1Ym1pdChldmVudCkge1xyXG4gICAgZXZlbnQucHJldmVudERlZmF1bHQoKTtcclxuXHJcbiAgICBpZiAoZWRpdGluZ0NvbXBhbnlJZCAmJiBvblVwZGF0ZUNvbXBhbnkpIHtcclxuICAgICAgY29uc3QgdXBkYXRlZCA9IGF3YWl0IG9uVXBkYXRlQ29tcGFueSh7XHJcbiAgICAgICAgaWQ6IGVkaXRpbmdDb21wYW55SWQsXHJcbiAgICAgICAgLi4uZm9ybSxcclxuICAgICAgfSk7XHJcblxyXG4gICAgICBpZiAodXBkYXRlZCkge1xyXG4gICAgICAgIHJlc2V0Q3JlYXRlTW9kZSgpO1xyXG4gICAgICB9XHJcblxyXG4gICAgICByZXR1cm47XHJcbiAgICB9XHJcblxyXG4gICAgYXdhaXQgb25BZGRDb21wYW55KGZvcm0pO1xyXG4gICAgc2V0Rm9ybShpbml0aWFsRm9ybSk7XHJcbiAgfVxyXG5cclxuICBhc3luYyBmdW5jdGlvbiBoYW5kbGVEZWxldGVDdXJyZW50Q29tcGFueSgpIHtcclxuICAgIGlmICghZWRpdGluZ0NvbXBhbnlJZCB8fCAhb25EZWxldGVDb21wYW55KSB7XHJcbiAgICAgIHJldHVybjtcclxuICAgIH1cclxuXHJcbiAgICBjb25zdCBkZWxldGVkID0gYXdhaXQgb25EZWxldGVDb21wYW55KGVkaXRpbmdDb21wYW55SWQpO1xyXG4gICAgaWYgKCFkZWxldGVkKSB7XHJcbiAgICAgIHJldHVybjtcclxuICAgIH1cclxuXHJcbiAgICBzZXRTZWxlY3RlZENvbXBhbnlJZHMoKGN1cnJlbnQpID0+IGN1cnJlbnQuZmlsdGVyKChpZCkgPT4gaWQgIT09IGVkaXRpbmdDb21wYW55SWQpKTtcclxuICAgIHJlc2V0Q3JlYXRlTW9kZSgpO1xyXG4gIH1cclxuXHJcbiAgYXN5bmMgZnVuY3Rpb24gaGFuZGxlRGVsZXRlQ29tcGFueUJ5SWQoY29tcGFueUlkKSB7XHJcbiAgICBpZiAoIW9uRGVsZXRlQ29tcGFueSkge1xyXG4gICAgICByZXR1cm47XHJcbiAgICB9XHJcblxyXG4gICAgY29uc3QgZGVsZXRlZCA9IGF3YWl0IG9uRGVsZXRlQ29tcGFueShjb21wYW55SWQpO1xyXG4gICAgaWYgKCFkZWxldGVkKSB7XHJcbiAgICAgIHJldHVybjtcclxuICAgIH1cclxuXHJcbiAgICBzZXRTZWxlY3RlZENvbXBhbnlJZHMoKGN1cnJlbnQpID0+IGN1cnJlbnQuZmlsdGVyKChpZCkgPT4gaWQgIT09IGNvbXBhbnlJZCkpO1xyXG4gICAgaWYgKGVkaXRpbmdDb21wYW55SWQgPT09IGNvbXBhbnlJZCkge1xyXG4gICAgICByZXNldENyZWF0ZU1vZGUoKTtcclxuICAgIH1cclxuICB9XHJcblxyXG4gIGZ1bmN0aW9uIHRvZ2dsZUNvbXBhbnlTZWxlY3Rpb24oY29tcGFueUlkKSB7XHJcbiAgICBzZXRTZWxlY3RlZENvbXBhbnlJZHMoKGN1cnJlbnQpID0+XHJcbiAgICAgIGN1cnJlbnQuaW5jbHVkZXMoY29tcGFueUlkKSA/IGN1cnJlbnQuZmlsdGVyKChpZCkgPT4gaWQgIT09IGNvbXBhbnlJZCkgOiBbLi4uY3VycmVudCwgY29tcGFueUlkXSxcclxuICAgICk7XHJcbiAgfVxyXG5cclxuICBmdW5jdGlvbiB0b2dnbGVTZWxlY3RBbGxDb21wYW5pZXMoKSB7XHJcbiAgICBpZiAoIWNvbXBhbmllcy5sZW5ndGgpIHtcclxuICAgICAgcmV0dXJuO1xyXG4gICAgfVxyXG5cclxuICAgIHNldFNlbGVjdGVkQ29tcGFueUlkcygoY3VycmVudCkgPT4gKGN1cnJlbnQubGVuZ3RoID09PSBjb21wYW5pZXMubGVuZ3RoID8gW10gOiBjb21wYW5pZXMubWFwKChjb21wYW55KSA9PiBjb21wYW55LmlkKSkpO1xyXG4gIH1cclxuXHJcbiAgYXN5bmMgZnVuY3Rpb24gaGFuZGxlQnVsa0RlbGV0ZUNvbXBhbmllcygpIHtcclxuICAgIGlmICghb25CdWxrRGVsZXRlQ29tcGFuaWVzIHx8ICFzZWxlY3RlZENvbXBhbnlJZHMubGVuZ3RoKSB7XHJcbiAgICAgIHJldHVybjtcclxuICAgIH1cclxuXHJcbiAgICBjb25zdCBkZWxldGVkID0gYXdhaXQgb25CdWxrRGVsZXRlQ29tcGFuaWVzKHNlbGVjdGVkQ29tcGFueUlkcyk7XHJcbiAgICBpZiAoIWRlbGV0ZWQpIHtcclxuICAgICAgcmV0dXJuO1xyXG4gICAgfVxyXG5cclxuICAgIGNvbnN0IGRlbGV0ZWRTZXQgPSBuZXcgU2V0KHNlbGVjdGVkQ29tcGFueUlkcyk7XHJcbiAgICBzZXRTZWxlY3RlZENvbXBhbnlJZHMoW10pO1xyXG4gICAgaWYgKGVkaXRpbmdDb21wYW55SWQgJiYgZGVsZXRlZFNldC5oYXMoZWRpdGluZ0NvbXBhbnlJZCkpIHtcclxuICAgICAgcmVzZXRDcmVhdGVNb2RlKCk7XHJcbiAgICB9XHJcbiAgfVxyXG5cclxuICByZXR1cm4gKFxyXG4gICAgPHNlY3Rpb24gY2xhc3NOYW1lPVwidmlldyBpcy1hY3RpdmVcIj5cclxuICAgICAgPGRpdiBjbGFzc05hbWU9XCJzZWN0aW9uLWhlYWRpbmdcIj5cclxuICAgICAgICA8ZGl2PlxyXG4gICAgICAgICAgPHAgY2xhc3NOYW1lPVwiZXllYnJvd1wiPlNpdGUgTWFuYWdlbWVudDwvcD5cclxuICAgICAgICAgIDxoMj5Db21wYW5pZXM8L2gyPlxyXG4gICAgICAgIDwvZGl2PlxyXG4gICAgICA8L2Rpdj5cclxuXHJcbiAgICAgIDxkaXYgY2xhc3NOYW1lPVwiY29udGVudC1ncmlkXCI+XHJcbiAgICAgICAgPGFydGljbGUgY2xhc3NOYW1lPVwicGFuZWxcIj5cclxuICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwicGFuZWwtaGVhZGluZ1wiPlxyXG4gICAgICAgICAgICA8ZGl2PlxyXG4gICAgICAgICAgICAgIDxwIGNsYXNzTmFtZT1cImV5ZWJyb3dcIj57ZWRpdGluZ0NvbXBhbnlJZCA/IFwiRWRpdFwiIDogXCJDcmVhdGVcIn08L3A+XHJcbiAgICAgICAgICAgICAgPGgzPntlZGl0aW5nQ29tcGFueUlkID8gXCJFZGl0IGNvbXBhbnlcIiA6IFwiQWRkIGNvbXBhbnlcIn08L2gzPlxyXG4gICAgICAgICAgICA8L2Rpdj5cclxuICAgICAgICAgIDwvZGl2PlxyXG5cclxuICAgICAgICAgIDxmb3JtIGNsYXNzTmFtZT1cImZvcm0tZ3JpZFwiIG9uU3VibWl0PXtoYW5kbGVTdWJtaXR9PlxyXG4gICAgICAgICAgICA8bGFiZWw+XHJcbiAgICAgICAgICAgICAgQ29tcGFueSBuYW1lXHJcbiAgICAgICAgICAgICAgPGlucHV0XHJcbiAgICAgICAgICAgICAgICByZXF1aXJlZFxyXG4gICAgICAgICAgICAgICAgdHlwZT1cInRleHRcIlxyXG4gICAgICAgICAgICAgICAgdmFsdWU9e2Zvcm0ubmFtZX1cclxuICAgICAgICAgICAgICAgIG9uQ2hhbmdlPXsoZXZlbnQpID0+IHNldEZvcm0oKGN1cnJlbnQpID0+ICh7IC4uLmN1cnJlbnQsIG5hbWU6IGV2ZW50LnRhcmdldC52YWx1ZSB9KSl9XHJcbiAgICAgICAgICAgICAgICBwbGFjZWhvbGRlcj1cIkNyZXNjZW50IFRleHRpbGUgR3JvdXBcIlxyXG4gICAgICAgICAgICAgIC8+XHJcbiAgICAgICAgICAgIDwvbGFiZWw+XHJcbiAgICAgICAgICAgIDxsYWJlbD5cclxuICAgICAgICAgICAgICBTaG9ydCBjb2RlXHJcbiAgICAgICAgICAgICAgPGlucHV0XHJcbiAgICAgICAgICAgICAgICByZXF1aXJlZFxyXG4gICAgICAgICAgICAgICAgdHlwZT1cInRleHRcIlxyXG4gICAgICAgICAgICAgICAgbWF4TGVuZ3RoPXs2fVxyXG4gICAgICAgICAgICAgICAgdmFsdWU9e2Zvcm0uc2hvcnRDb2RlfVxyXG4gICAgICAgICAgICAgICAgb25DaGFuZ2U9eyhldmVudCkgPT4gc2V0Rm9ybSgoY3VycmVudCkgPT4gKHsgLi4uY3VycmVudCwgc2hvcnRDb2RlOiBldmVudC50YXJnZXQudmFsdWUudG9VcHBlckNhc2UoKSB9KSl9XHJcbiAgICAgICAgICAgICAgICBwbGFjZWhvbGRlcj1cIkNUR1wiXHJcbiAgICAgICAgICAgICAgLz5cclxuICAgICAgICAgICAgPC9sYWJlbD5cclxuICAgICAgICAgICAgPGxhYmVsIGNsYXNzTmFtZT1cInNwYW4tMlwiPlxyXG4gICAgICAgICAgICAgIFJlZmVyZW5jZSBubyBmb3JtYXQgKGRlZmF1bHQpXHJcbiAgICAgICAgICAgICAgPGlucHV0XHJcbiAgICAgICAgICAgICAgICB0eXBlPVwidGV4dFwiXHJcbiAgICAgICAgICAgICAgICB2YWx1ZT17Zm9ybS5sZXR0ZXJOb1BhdHRlcm59XHJcbiAgICAgICAgICAgICAgICBvbkNoYW5nZT17KGV2ZW50KSA9PiBzZXRGb3JtKChjdXJyZW50KSA9PiAoeyAuLi5jdXJyZW50LCBsZXR0ZXJOb1BhdHRlcm46IGV2ZW50LnRhcmdldC52YWx1ZSB9KSl9XHJcbiAgICAgICAgICAgICAgICBwbGFjZWhvbGRlcj1cInt7Y29tcGFueV9jb2RlfX0ve3tkZXBhcnRtZW50X2NvZGV9fS97e3RlbXBsYXRlX2NvZGV9fS97e3llYXJ9fS17e21vbnRofX0ve3tzZXF1ZW5jZTN9fVwiXHJcbiAgICAgICAgICAgICAgLz5cclxuICAgICAgICAgICAgPC9sYWJlbD5cclxuICAgICAgICAgICAgPGxhYmVsIGNsYXNzTmFtZT1cInNwYW4tMlwiPlxyXG4gICAgICAgICAgICAgIEFkZHJlc3NcclxuICAgICAgICAgICAgICA8dGV4dGFyZWFcclxuICAgICAgICAgICAgICAgIHJvd3M9ezN9XHJcbiAgICAgICAgICAgICAgICB2YWx1ZT17Zm9ybS5hZGRyZXNzfVxyXG4gICAgICAgICAgICAgICAgb25DaGFuZ2U9eyhldmVudCkgPT4gc2V0Rm9ybSgoY3VycmVudCkgPT4gKHsgLi4uY3VycmVudCwgYWRkcmVzczogZXZlbnQudGFyZ2V0LnZhbHVlIH0pKX1cclxuICAgICAgICAgICAgICAgIHBsYWNlaG9sZGVyPVwiU3RyZWV0LCBjaXR5LCBjb3VudHJ5XCJcclxuICAgICAgICAgICAgICAvPlxyXG4gICAgICAgICAgICA8L2xhYmVsPlxyXG4gICAgICAgICAgICA8bGFiZWw+XHJcbiAgICAgICAgICAgICAgUGhvbmVcclxuICAgICAgICAgICAgICA8aW5wdXRcclxuICAgICAgICAgICAgICAgIHR5cGU9XCJ0ZXh0XCJcclxuICAgICAgICAgICAgICAgIHZhbHVlPXtmb3JtLnBob25lfVxyXG4gICAgICAgICAgICAgICAgb25DaGFuZ2U9eyhldmVudCkgPT4gc2V0Rm9ybSgoY3VycmVudCkgPT4gKHsgLi4uY3VycmVudCwgcGhvbmU6IGV2ZW50LnRhcmdldC52YWx1ZSB9KSl9XHJcbiAgICAgICAgICAgICAgICBwbGFjZWhvbGRlcj1cIis5MiAzMDAgMDAwMDAwMFwiXHJcbiAgICAgICAgICAgICAgLz5cclxuICAgICAgICAgICAgPC9sYWJlbD5cclxuICAgICAgICAgICAgPGxhYmVsPlxyXG4gICAgICAgICAgICAgIEVtYWlsXHJcbiAgICAgICAgICAgICAgPGlucHV0XHJcbiAgICAgICAgICAgICAgICB0eXBlPVwiZW1haWxcIlxyXG4gICAgICAgICAgICAgICAgdmFsdWU9e2Zvcm0uZW1haWx9XHJcbiAgICAgICAgICAgICAgICBvbkNoYW5nZT17KGV2ZW50KSA9PiBzZXRGb3JtKChjdXJyZW50KSA9PiAoeyAuLi5jdXJyZW50LCBlbWFpbDogZXZlbnQudGFyZ2V0LnZhbHVlIH0pKX1cclxuICAgICAgICAgICAgICAgIHBsYWNlaG9sZGVyPVwiaHJAY29tcGFueS5jb21cIlxyXG4gICAgICAgICAgICAgIC8+XHJcbiAgICAgICAgICAgIDwvbGFiZWw+XHJcbiAgICAgICAgICAgIDxsYWJlbCBjbGFzc05hbWU9XCJzcGFuLTJcIj5cclxuICAgICAgICAgICAgICBGb290ZXIgdGV4dFxyXG4gICAgICAgICAgICAgIDx0ZXh0YXJlYVxyXG4gICAgICAgICAgICAgICAgcm93cz17M31cclxuICAgICAgICAgICAgICAgIHZhbHVlPXtmb3JtLmZvb3RlclRleHR9XHJcbiAgICAgICAgICAgICAgICBvbkNoYW5nZT17KGV2ZW50KSA9PiBzZXRGb3JtKChjdXJyZW50KSA9PiAoeyAuLi5jdXJyZW50LCBmb290ZXJUZXh0OiBldmVudC50YXJnZXQudmFsdWUgfSkpfVxyXG4gICAgICAgICAgICAgICAgcGxhY2Vob2xkZXI9XCJPZmZpY2lhbCBmb290ZXIgb3IgZGlzY2xhaW1lclwiXHJcbiAgICAgICAgICAgICAgLz5cclxuICAgICAgICAgICAgPC9sYWJlbD5cclxuICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJidXR0b24tcm93IHNwYW4tMlwiPlxyXG4gICAgICAgICAgICAgIDxidXR0b24gY2xhc3NOYW1lPVwiYnV0dG9uIGJ1dHRvbi1wcmltYXJ5XCIgdHlwZT1cInN1Ym1pdFwiPlxyXG4gICAgICAgICAgICAgICAge2VkaXRpbmdDb21wYW55SWQgPyBcIlVwZGF0ZSBjb21wYW55XCIgOiBcIlNhdmUgY29tcGFueVwifVxyXG4gICAgICAgICAgICAgIDwvYnV0dG9uPlxyXG4gICAgICAgICAgICAgIHtlZGl0aW5nQ29tcGFueUlkID8gKFxyXG4gICAgICAgICAgICAgICAgPD5cclxuICAgICAgICAgICAgICAgICAgPGJ1dHRvbiBjbGFzc05hbWU9XCJidXR0b24gYnV0dG9uLXNlY29uZGFyeVwiIHR5cGU9XCJidXR0b25cIiBvbkNsaWNrPXtyZXNldENyZWF0ZU1vZGV9PlxyXG4gICAgICAgICAgICAgICAgICAgIENhbmNlbCBlZGl0XHJcbiAgICAgICAgICAgICAgICAgIDwvYnV0dG9uPlxyXG4gICAgICAgICAgICAgICAgICA8YnV0dG9uIGNsYXNzTmFtZT1cImJ1dHRvbiBidXR0b24tc2Vjb25kYXJ5XCIgdHlwZT1cImJ1dHRvblwiIG9uQ2xpY2s9e2hhbmRsZURlbGV0ZUN1cnJlbnRDb21wYW55fT5cclxuICAgICAgICAgICAgICAgICAgICBEZWxldGUgY29tcGFueVxyXG4gICAgICAgICAgICAgICAgICA8L2J1dHRvbj5cclxuICAgICAgICAgICAgICAgIDwvPlxyXG4gICAgICAgICAgICAgICkgOiBudWxsfVxyXG4gICAgICAgICAgICA8L2Rpdj5cclxuICAgICAgICAgIDwvZm9ybT5cclxuXHJcbiAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImhlbHBlci1ub3RlXCIgc3R5bGU9e3sgbWFyZ2luVG9wOiAxNCB9fT5cclxuICAgICAgICAgICAgRm9ybWF0IHRva2VuczogPGNvZGU+e1wie3tjb21wYW55X2NvZGV9fVwifTwvY29kZT4sIDxjb2RlPntcInt7ZGVwYXJ0bWVudF9jb2RlfX1cIn08L2NvZGU+LCA8Y29kZT57XCJ7e3RlbXBsYXRlX2NvZGV9fVwifTwvY29kZT4se1wiIFwifVxyXG4gICAgICAgICAgICA8Y29kZT57XCJ7e3llYXJ9fVwifTwvY29kZT4sIDxjb2RlPntcInt7eXl9fVwifTwvY29kZT4sIDxjb2RlPntcInt7bW9udGh9fVwifTwvY29kZT4sIDxjb2RlPntcInt7ZGF5fX1cIn08L2NvZGU+LCA8Y29kZT57XCJ7e3NlcXVlbmNlfX1cIn08L2NvZGU+LHtcIiBcIn1cclxuICAgICAgICAgICAgPGNvZGU+e1wie3tzZXF1ZW5jZTN9fVwifTwvY29kZT4sIDxjb2RlPntcInt7c2VxdWVuY2U0fX1cIn08L2NvZGU+LiBZb3UgY2FuIGFsc28gdXNlIHVuZGVyc2NvcmVzIGxpa2UgPGNvZGU+X19fXzwvY29kZT4gZm9yIGF1dG8gbnVtYmVyaW5nLlxyXG4gICAgICAgICAgPC9kaXY+XHJcbiAgICAgICAgPC9hcnRpY2xlPlxyXG5cclxuICAgICAgICA8YXJ0aWNsZSBjbGFzc05hbWU9XCJwYW5lbFwiPlxyXG4gICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJwYW5lbC1oZWFkaW5nXCI+XHJcbiAgICAgICAgICAgIDxkaXY+XHJcbiAgICAgICAgICAgICAgPHAgY2xhc3NOYW1lPVwiZXllYnJvd1wiPkRpcmVjdG9yeTwvcD5cclxuICAgICAgICAgICAgICA8aDM+Q29tcGFueSBsaXN0PC9oMz5cclxuICAgICAgICAgICAgPC9kaXY+XHJcbiAgICAgICAgICAgIHtjb21wYW5pZXMubGVuZ3RoID8gKFxyXG4gICAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwicm93LWFjdGlvbnNcIj5cclxuICAgICAgICAgICAgICAgIDxidXR0b24gY2xhc3NOYW1lPVwiYnV0dG9uIGJ1dHRvbi1zZWNvbmRhcnlcIiB0eXBlPVwiYnV0dG9uXCIgb25DbGljaz17dG9nZ2xlU2VsZWN0QWxsQ29tcGFuaWVzfT5cclxuICAgICAgICAgICAgICAgICAge3NlbGVjdGVkQ29tcGFueUlkcy5sZW5ndGggPT09IGNvbXBhbmllcy5sZW5ndGggPyBcIkNsZWFyIGFsbFwiIDogXCJTZWxlY3QgYWxsXCJ9XHJcbiAgICAgICAgICAgICAgICA8L2J1dHRvbj5cclxuICAgICAgICAgICAgICAgIDxidXR0b25cclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwiYnV0dG9uIGJ1dHRvbi1zZWNvbmRhcnlcIlxyXG4gICAgICAgICAgICAgICAgICB0eXBlPVwiYnV0dG9uXCJcclxuICAgICAgICAgICAgICAgICAgb25DbGljaz17aGFuZGxlQnVsa0RlbGV0ZUNvbXBhbmllc31cclxuICAgICAgICAgICAgICAgICAgZGlzYWJsZWQ9eyFzZWxlY3RlZENvbXBhbnlJZHMubGVuZ3RofVxyXG4gICAgICAgICAgICAgICAgPlxyXG4gICAgICAgICAgICAgICAgICBEZWxldGUgc2VsZWN0ZWQgKHtzZWxlY3RlZENvbXBhbnlJZHMubGVuZ3RofSlcclxuICAgICAgICAgICAgICAgIDwvYnV0dG9uPlxyXG4gICAgICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgICAgICApIDogbnVsbH1cclxuICAgICAgICAgIDwvZGl2PlxyXG5cclxuICAgICAgICAgIHtjb21wYW5pZXMubGVuZ3RoID8gKFxyXG4gICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImNhcmQtbGlzdFwiPlxyXG4gICAgICAgICAgICAgIHtjb21wYW5pZXMubWFwKChjb21wYW55KSA9PiB7XHJcbiAgICAgICAgICAgICAgICBjb25zdCBpc1NlbGVjdGVkID0gc2VsZWN0ZWRDb21wYW55SWRzLmluY2x1ZGVzKGNvbXBhbnkuaWQpO1xyXG5cclxuICAgICAgICAgICAgICAgIHJldHVybiAoXHJcbiAgICAgICAgICAgICAgICAgIDxhcnRpY2xlIGNsYXNzTmFtZT1cImVudGl0eS1jYXJkXCIga2V5PXtjb21wYW55LmlkfT5cclxuICAgICAgICAgICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cInRlbXBsYXRlLXNlbGVjdC1yb3dcIj5cclxuICAgICAgICAgICAgICAgICAgICAgIDxsYWJlbCBjbGFzc05hbWU9XCJ0ZW1wbGF0ZS1zZWxlY3QtY2hlY2tib3hcIj5cclxuICAgICAgICAgICAgICAgICAgICAgICAgPGlucHV0XHJcbiAgICAgICAgICAgICAgICAgICAgICAgICAgdHlwZT1cImNoZWNrYm94XCJcclxuICAgICAgICAgICAgICAgICAgICAgICAgICBjaGVja2VkPXtpc1NlbGVjdGVkfVxyXG4gICAgICAgICAgICAgICAgICAgICAgICAgIG9uQ2hhbmdlPXsoKSA9PiB0b2dnbGVDb21wYW55U2VsZWN0aW9uKGNvbXBhbnkuaWQpfVxyXG4gICAgICAgICAgICAgICAgICAgICAgICAvPlxyXG4gICAgICAgICAgICAgICAgICAgICAgICA8c3Bhbj5TZWxlY3Q8L3NwYW4+XHJcbiAgICAgICAgICAgICAgICAgICAgICA8L2xhYmVsPlxyXG4gICAgICAgICAgICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgICAgICAgICAgICAgIDxoND57Y29tcGFueS5uYW1lfTwvaDQ+XHJcbiAgICAgICAgICAgICAgICAgICAgPHA+e2NvbXBhbnkuYWRkcmVzcyB8fCBcIk5vIGFkZHJlc3MgYWRkZWRcIn08L3A+XHJcbiAgICAgICAgICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJlbnRpdHktbWV0YVwiPlxyXG4gICAgICAgICAgICAgICAgICAgICAgPHNwYW4gY2xhc3NOYW1lPVwiY2hpcFwiPntjb21wYW55LnNob3J0Q29kZX08L3NwYW4+XHJcbiAgICAgICAgICAgICAgICAgICAgICB7Y29tcGFueS5lbWFpbCA/IDxzcGFuIGNsYXNzTmFtZT1cImNoaXBcIj57Y29tcGFueS5lbWFpbH08L3NwYW4+IDogbnVsbH1cclxuICAgICAgICAgICAgICAgICAgICAgIHtjb21wYW55LmxldHRlck5vUGF0dGVybiA/IDxzcGFuIGNsYXNzTmFtZT1cImNoaXAgY2hpcC0tdG9uZVwiPlJlZjoge2NvbXBhbnkubGV0dGVyTm9QYXR0ZXJufTwvc3Bhbj4gOiBudWxsfVxyXG4gICAgICAgICAgICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgICAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwicm93LWFjdGlvbnNcIj5cclxuICAgICAgICAgICAgICAgICAgICAgIDxidXR0b24gY2xhc3NOYW1lPVwiYnV0dG9uIGJ1dHRvbi1zZWNvbmRhcnlcIiB0eXBlPVwiYnV0dG9uXCIgb25DbGljaz17KCkgPT4gbG9hZENvbXBhbnlGb3JFZGl0KGNvbXBhbnkpfT5cclxuICAgICAgICAgICAgICAgICAgICAgICAgRWRpdFxyXG4gICAgICAgICAgICAgICAgICAgICAgPC9idXR0b24+XHJcbiAgICAgICAgICAgICAgICAgICAgICA8YnV0dG9uIGNsYXNzTmFtZT1cImJ1dHRvbiBidXR0b24tc2Vjb25kYXJ5XCIgdHlwZT1cImJ1dHRvblwiIG9uQ2xpY2s9eygpID0+IGhhbmRsZURlbGV0ZUNvbXBhbnlCeUlkKGNvbXBhbnkuaWQpfT5cclxuICAgICAgICAgICAgICAgICAgICAgICAgRGVsZXRlXHJcbiAgICAgICAgICAgICAgICAgICAgICA8L2J1dHRvbj5cclxuICAgICAgICAgICAgICAgICAgICA8L2Rpdj5cclxuICAgICAgICAgICAgICAgICAgPC9hcnRpY2xlPlxyXG4gICAgICAgICAgICAgICAgKTtcclxuICAgICAgICAgICAgICB9KX1cclxuICAgICAgICAgICAgPC9kaXY+XHJcbiAgICAgICAgICApIDogKFxyXG4gICAgICAgICAgICA8RW1wdHlTdGF0ZSBtZXNzYWdlPVwiQWRkIHRoZSBmaXJzdCBjb21wYW55IHRvIHN0YXJ0IGJ1aWxkaW5nIHRoZSBzeXN0ZW0uXCIgLz5cclxuICAgICAgICAgICl9XHJcbiAgICAgICAgPC9hcnRpY2xlPlxyXG4gICAgICA8L2Rpdj5cclxuICAgIDwvc2VjdGlvbj5cclxuICApO1xyXG59XHJcbiJdLCJmaWxlIjoiQzovVXNlcnMvZGVsbC9EZXNrdG9wL2p6YXJyX2xldHRlci9zcmMvdmlld3MvQ29tcGFuaWVzVmlldy5qc3gifQ==

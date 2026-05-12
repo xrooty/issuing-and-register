@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import EmptyState from "../components/EmptyState";
+import PaginationControls from "../components/PaginationControls";
 import { formatDate } from "../utils/lettering";
 
 export default function RegisterView({
@@ -14,6 +15,8 @@ export default function RegisterView({
   onBulkDeleteLetters,
 }) {
   const [selectedLetterIds, setSelectedLetterIds] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     const rowSet = new Set(rows.map((row) => row.id));
@@ -53,6 +56,9 @@ export default function RegisterView({
 
   const visibleRowIdSet = new Set(visibleRows.map((row) => row.id));
   const visibleSelectedCount = selectedLetterIds.filter((id) => visibleRowIdSet.has(id)).length;
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedRows = visibleRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function toggleLetterSelection(letterId) {
     setSelectedLetterIds((current) =>
@@ -168,6 +174,14 @@ export default function RegisterView({
           </label>
         </div>
 
+        <PaginationControls
+          page={currentPage}
+          pageSize={pageSize}
+          totalItems={visibleRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+
         <div className="table-wrap">
           <table>
             <thead>
@@ -185,7 +199,7 @@ export default function RegisterView({
             </thead>
             <tbody>
               {visibleRows.length ? (
-                visibleRows.map((row) => (
+                paginatedRows.map((row) => (
                   <tr key={row.id}>
                     <td>
                       <input

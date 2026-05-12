@@ -28,16 +28,7 @@ export default function AdminView({
   }, [roles, selectedRole]);
   const activeTab = tab === "overrides" ? "overrides" : "permissions";
   return (
-    <section className="view is-active">
-      <div className="section-heading"><div><p className="eyebrow">Admin</p><h2>System control panel</h2></div></div>
-      <article className="panel">
-        <div className="metrics-grid">
-          <article className="metric-card"><span className="metric-label">Users</span><strong className="metric-value">{stats.users}</strong></article>
-          <article className="metric-card"><span className="metric-label">Clients</span><strong className="metric-value">{stats.clients}</strong></article>
-          <article className="metric-card"><span className="metric-label">Reports</span><strong className="metric-value">{stats.reports}</strong></article>
-          <article className="metric-card"><span className="metric-label">Activity</span><strong className="metric-value">{stats.activity}</strong></article>
-        </div>
-      </article>
+    <section className="view is-active admin-view">
       {canManageActivityLogging ? (
         <article className="panel">
           <div className="panel-heading">

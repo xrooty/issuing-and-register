@@ -1,0 +1,212 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/views/DashboardView.jsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=d05ab475"; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+import EmptyState from "/src/components/EmptyState.jsx";
+import { formatDate } from "/src/utils/lettering.js";
+export default function DashboardView({ metrics, recentLetters }) {
+  return /* @__PURE__ */ jsxDEV("section", { className: "view is-active", children: [
+    /* @__PURE__ */ jsxDEV("div", { className: "section-heading", children: /* @__PURE__ */ jsxDEV("div", { children: [
+      /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Overview" }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+        lineNumber: 28,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDEV("h2", { children: "Operational snapshot" }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+        lineNumber: 29,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+      lineNumber: 27,
+      columnNumber: 9
+    }, this) }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+      lineNumber: 26,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDEV("div", { className: "metrics-grid", children: metrics.map(
+      (item) => /* @__PURE__ */ jsxDEV("article", { className: "metric-card", children: [
+        /* @__PURE__ */ jsxDEV("span", { className: "metric-label", children: item.label }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 36,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV("strong", { className: "metric-value", children: item.value }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 37,
+          columnNumber: 13
+        }, this)
+      ] }, item.label, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+        lineNumber: 35,
+        columnNumber: 9
+      }, this)
+    ) }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+      lineNumber: 33,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDEV("div", { className: "dashboard-grid", children: [
+      /* @__PURE__ */ jsxDEV("article", { className: "panel", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "panel-heading", children: /* @__PURE__ */ jsxDEV("div", { children: [
+          /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Recent activity" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 46,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("h3", { children: "Latest issued letters" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 47,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 45,
+          columnNumber: 13
+        }, this) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 44,
+          columnNumber: 11
+        }, this),
+        recentLetters.length ? /* @__PURE__ */ jsxDEV("div", { className: "card-list", children: recentLetters.map(
+          (letter) => /* @__PURE__ */ jsxDEV("div", { className: "register-card", children: [
+            /* @__PURE__ */ jsxDEV("h4", { children: letter.subject }, void 0, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+              lineNumber: 54,
+              columnNumber: 19
+            }, this),
+            /* @__PURE__ */ jsxDEV("p", { children: [
+              letter.letterNo,
+              " - ",
+              formatDate(letter.issueDate)
+            ] }, void 0, true, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+              lineNumber: 55,
+              columnNumber: 19
+            }, this),
+            /* @__PURE__ */ jsxDEV("p", { children: [
+              letter.recipientName,
+              " - ",
+              letter.companyName,
+              " / ",
+              letter.departmentName
+            ] }, void 0, true, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+              lineNumber: 58,
+              columnNumber: 19
+            }, this)
+          ] }, letter.id, true, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 53,
+            columnNumber: 13
+          }, this)
+        ) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 51,
+          columnNumber: 11
+        }, this) : /* @__PURE__ */ jsxDEV(EmptyState, { message: "Issued letters will appear here once the register starts filling up." }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 65,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+        lineNumber: 43,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDEV("article", { className: "panel panel-accent", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "panel-heading", children: /* @__PURE__ */ jsxDEV("div", { children: [
+          /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Checklist" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 72,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("h3", { children: "Suggested next steps" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 73,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 71,
+          columnNumber: 13
+        }, this) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 70,
+          columnNumber: 11
+        }, this),
+        /* @__PURE__ */ jsxDEV("ul", { className: "checklist", children: [
+          /* @__PURE__ */ jsxDEV("li", { children: "Add each company with short code, contact details, and default reference format." }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 77,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("li", { children: "Create departments under each company before issuing letters." }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 78,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("li", { children: "Maintain one template per letter type for cleaner issuing flow." }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 79,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDEV("li", { children: "Export the register regularly for management reporting." }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+            lineNumber: 80,
+            columnNumber: 13
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+          lineNumber: 76,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+        lineNumber: 69,
+        columnNumber: 9
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+      lineNumber: 42,
+      columnNumber: 7
+    }, this)
+  ] }, void 0, true, {
+    fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx",
+    lineNumber: 25,
+    columnNumber: 5
+  }, this);
+}
+_c = DashboardView;
+var _c;
+$RefreshReg$(_c, "DashboardView");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/dell/Desktop/jzarr_letter/src/views/DashboardView.jsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJtYXBwaW5ncyI6IkFBUVU7Ozs7Ozs7Ozs7Ozs7Ozs7QUFSVixPQUFPQSxnQkFBZ0I7QUFDdkIsU0FBU0Msa0JBQWtCO0FBRTNCLHdCQUF3QkMsY0FBYyxFQUFFQyxTQUFTQyxjQUFjLEdBQUc7QUFDaEUsU0FDRSx1QkFBQyxhQUFRLFdBQVUsa0JBQ2pCO0FBQUEsMkJBQUMsU0FBSSxXQUFVLG1CQUNiLGlDQUFDLFNBQ0M7QUFBQSw2QkFBQyxPQUFFLFdBQVUsV0FBVSx3QkFBdkI7QUFBQTtBQUFBO0FBQUE7QUFBQSxhQUErQjtBQUFBLE1BQy9CLHVCQUFDLFFBQUcsb0NBQUo7QUFBQTtBQUFBO0FBQUE7QUFBQSxhQUF3QjtBQUFBLFNBRjFCO0FBQUE7QUFBQTtBQUFBO0FBQUEsV0FHQSxLQUpGO0FBQUE7QUFBQTtBQUFBO0FBQUEsV0FLQTtBQUFBLElBRUEsdUJBQUMsU0FBSSxXQUFVLGdCQUNaRCxrQkFBUUU7QUFBQUEsTUFBSSxDQUFDQyxTQUNaLHVCQUFDLGFBQVEsV0FBVSxlQUNqQjtBQUFBLCtCQUFDLFVBQUssV0FBVSxnQkFBZ0JBLGVBQUtDLFNBQXJDO0FBQUE7QUFBQTtBQUFBO0FBQUEsZUFBMkM7QUFBQSxRQUMzQyx1QkFBQyxZQUFPLFdBQVUsZ0JBQWdCRCxlQUFLRSxTQUF2QztBQUFBO0FBQUE7QUFBQTtBQUFBLGVBQTZDO0FBQUEsV0FGVEYsS0FBS0MsT0FBM0M7QUFBQTtBQUFBO0FBQUE7QUFBQSxhQUdBO0FBQUEsSUFDRCxLQU5IO0FBQUE7QUFBQTtBQUFBO0FBQUEsV0FPQTtBQUFBLElBRUEsdUJBQUMsU0FBSSxXQUFVLGtCQUNiO0FBQUEsNkJBQUMsYUFBUSxXQUFVLFNBQ2pCO0FBQUEsK0JBQUMsU0FBSSxXQUFVLGlCQUNiLGlDQUFDLFNBQ0M7QUFBQSxpQ0FBQyxPQUFFLFdBQVUsV0FBVSwrQkFBdkI7QUFBQTtBQUFBO0FBQUE7QUFBQSxpQkFBc0M7QUFBQSxVQUN0Qyx1QkFBQyxRQUFHLHFDQUFKO0FBQUE7QUFBQTtBQUFBO0FBQUEsaUJBQXlCO0FBQUEsYUFGM0I7QUFBQTtBQUFBO0FBQUE7QUFBQSxlQUdBLEtBSkY7QUFBQTtBQUFBO0FBQUE7QUFBQSxlQUtBO0FBQUEsUUFDQ0gsY0FBY0ssU0FDYix1QkFBQyxTQUFJLFdBQVUsYUFDWkwsd0JBQWNDO0FBQUFBLFVBQUksQ0FBQ0ssV0FDbEIsdUJBQUMsU0FBSSxXQUFVLGlCQUNiO0FBQUEsbUNBQUMsUUFBSUEsaUJBQU9DLFdBQVo7QUFBQTtBQUFBO0FBQUE7QUFBQSxtQkFBb0I7QUFBQSxZQUNwQix1QkFBQyxPQUNFRDtBQUFBQSxxQkFBT0U7QUFBQUEsY0FBUztBQUFBLGNBQUlYLFdBQVdTLE9BQU9HLFNBQVM7QUFBQSxpQkFEbEQ7QUFBQTtBQUFBO0FBQUE7QUFBQSxtQkFFQTtBQUFBLFlBQ0EsdUJBQUMsT0FDRUg7QUFBQUEscUJBQU9JO0FBQUFBLGNBQWM7QUFBQSxjQUFJSixPQUFPSztBQUFBQSxjQUFZO0FBQUEsY0FBSUwsT0FBT007QUFBQUEsaUJBRDFEO0FBQUE7QUFBQTtBQUFBO0FBQUEsbUJBRUE7QUFBQSxlQVBrQ04sT0FBT08sSUFBM0M7QUFBQTtBQUFBO0FBQUE7QUFBQSxpQkFRQTtBQUFBLFFBQ0QsS0FYSDtBQUFBO0FBQUE7QUFBQTtBQUFBLGVBWUEsSUFFQSx1QkFBQyxjQUFXLFNBQVEsMEVBQXBCO0FBQUE7QUFBQTtBQUFBO0FBQUEsZUFBMEY7QUFBQSxXQXRCOUY7QUFBQTtBQUFBO0FBQUE7QUFBQSxhQXdCQTtBQUFBLE1BRUEsdUJBQUMsYUFBUSxXQUFVLHNCQUNqQjtBQUFBLCtCQUFDLFNBQUksV0FBVSxpQkFDYixpQ0FBQyxTQUNDO0FBQUEsaUNBQUMsT0FBRSxXQUFVLFdBQVUseUJBQXZCO0FBQUE7QUFBQTtBQUFBO0FBQUEsaUJBQWdDO0FBQUEsVUFDaEMsdUJBQUMsUUFBRyxvQ0FBSjtBQUFBO0FBQUE7QUFBQTtBQUFBLGlCQUF3QjtBQUFBLGFBRjFCO0FBQUE7QUFBQTtBQUFBO0FBQUEsZUFHQSxLQUpGO0FBQUE7QUFBQTtBQUFBO0FBQUEsZUFLQTtBQUFBLFFBQ0EsdUJBQUMsUUFBRyxXQUFVLGFBQ1o7QUFBQSxpQ0FBQyxRQUFHLGdHQUFKO0FBQUE7QUFBQTtBQUFBO0FBQUEsaUJBQW9GO0FBQUEsVUFDcEYsdUJBQUMsUUFBRyw2RUFBSjtBQUFBO0FBQUE7QUFBQTtBQUFBLGlCQUFpRTtBQUFBLFVBQ2pFLHVCQUFDLFFBQUcsK0VBQUo7QUFBQTtBQUFBO0FBQUE7QUFBQSxpQkFBbUU7QUFBQSxVQUNuRSx1QkFBQyxRQUFHLHVFQUFKO0FBQUE7QUFBQTtBQUFBO0FBQUEsaUJBQTJEO0FBQUEsYUFKN0Q7QUFBQTtBQUFBO0FBQUE7QUFBQSxlQUtBO0FBQUEsV0FaRjtBQUFBO0FBQUE7QUFBQTtBQUFBLGFBYUE7QUFBQSxTQXhDRjtBQUFBO0FBQUE7QUFBQTtBQUFBLFdBeUNBO0FBQUEsT0ExREY7QUFBQTtBQUFBO0FBQUE7QUFBQSxTQTJEQTtBQUVKO0FBQUNDLEtBL0R1QmhCO0FBQWEsSUFBQWdCO0FBQUEsYUFBQUEsSUFBQSIsIm5hbWVzIjpbIkVtcHR5U3RhdGUiLCJmb3JtYXREYXRlIiwiRGFzaGJvYXJkVmlldyIsIm1ldHJpY3MiLCJyZWNlbnRMZXR0ZXJzIiwibWFwIiwiaXRlbSIsImxhYmVsIiwidmFsdWUiLCJsZW5ndGgiLCJsZXR0ZXIiLCJzdWJqZWN0IiwibGV0dGVyTm8iLCJpc3N1ZURhdGUiLCJyZWNpcGllbnROYW1lIiwiY29tcGFueU5hbWUiLCJkZXBhcnRtZW50TmFtZSIsImlkIiwiX2MiXSwiaWdub3JlTGlzdCI6W10sInNvdXJjZXMiOlsiRGFzaGJvYXJkVmlldy5qc3giXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IEVtcHR5U3RhdGUgZnJvbSBcIi4uL2NvbXBvbmVudHMvRW1wdHlTdGF0ZVwiO1xyXG5pbXBvcnQgeyBmb3JtYXREYXRlIH0gZnJvbSBcIi4uL3V0aWxzL2xldHRlcmluZ1wiO1xyXG5cclxuZXhwb3J0IGRlZmF1bHQgZnVuY3Rpb24gRGFzaGJvYXJkVmlldyh7IG1ldHJpY3MsIHJlY2VudExldHRlcnMgfSkge1xyXG4gIHJldHVybiAoXHJcbiAgICA8c2VjdGlvbiBjbGFzc05hbWU9XCJ2aWV3IGlzLWFjdGl2ZVwiPlxyXG4gICAgICA8ZGl2IGNsYXNzTmFtZT1cInNlY3Rpb24taGVhZGluZ1wiPlxyXG4gICAgICAgIDxkaXY+XHJcbiAgICAgICAgICA8cCBjbGFzc05hbWU9XCJleWVicm93XCI+T3ZlcnZpZXc8L3A+XHJcbiAgICAgICAgICA8aDI+T3BlcmF0aW9uYWwgc25hcHNob3Q8L2gyPlxyXG4gICAgICAgIDwvZGl2PlxyXG4gICAgICA8L2Rpdj5cclxuXHJcbiAgICAgIDxkaXYgY2xhc3NOYW1lPVwibWV0cmljcy1ncmlkXCI+XHJcbiAgICAgICAge21ldHJpY3MubWFwKChpdGVtKSA9PiAoXHJcbiAgICAgICAgICA8YXJ0aWNsZSBjbGFzc05hbWU9XCJtZXRyaWMtY2FyZFwiIGtleT17aXRlbS5sYWJlbH0+XHJcbiAgICAgICAgICAgIDxzcGFuIGNsYXNzTmFtZT1cIm1ldHJpYy1sYWJlbFwiPntpdGVtLmxhYmVsfTwvc3Bhbj5cclxuICAgICAgICAgICAgPHN0cm9uZyBjbGFzc05hbWU9XCJtZXRyaWMtdmFsdWVcIj57aXRlbS52YWx1ZX08L3N0cm9uZz5cclxuICAgICAgICAgIDwvYXJ0aWNsZT5cclxuICAgICAgICApKX1cclxuICAgICAgPC9kaXY+XHJcblxyXG4gICAgICA8ZGl2IGNsYXNzTmFtZT1cImRhc2hib2FyZC1ncmlkXCI+XHJcbiAgICAgICAgPGFydGljbGUgY2xhc3NOYW1lPVwicGFuZWxcIj5cclxuICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwicGFuZWwtaGVhZGluZ1wiPlxyXG4gICAgICAgICAgICA8ZGl2PlxyXG4gICAgICAgICAgICAgIDxwIGNsYXNzTmFtZT1cImV5ZWJyb3dcIj5SZWNlbnQgYWN0aXZpdHk8L3A+XHJcbiAgICAgICAgICAgICAgPGgzPkxhdGVzdCBpc3N1ZWQgbGV0dGVyczwvaDM+XHJcbiAgICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgICAgPC9kaXY+XHJcbiAgICAgICAgICB7cmVjZW50TGV0dGVycy5sZW5ndGggPyAoXHJcbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiY2FyZC1saXN0XCI+XHJcbiAgICAgICAgICAgICAge3JlY2VudExldHRlcnMubWFwKChsZXR0ZXIpID0+IChcclxuICAgICAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwicmVnaXN0ZXItY2FyZFwiIGtleT17bGV0dGVyLmlkfT5cclxuICAgICAgICAgICAgICAgICAgPGg0PntsZXR0ZXIuc3ViamVjdH08L2g0PlxyXG4gICAgICAgICAgICAgICAgICA8cD5cclxuICAgICAgICAgICAgICAgICAgICB7bGV0dGVyLmxldHRlck5vfSAtIHtmb3JtYXREYXRlKGxldHRlci5pc3N1ZURhdGUpfVxyXG4gICAgICAgICAgICAgICAgICA8L3A+XHJcbiAgICAgICAgICAgICAgICAgIDxwPlxyXG4gICAgICAgICAgICAgICAgICAgIHtsZXR0ZXIucmVjaXBpZW50TmFtZX0gLSB7bGV0dGVyLmNvbXBhbnlOYW1lfSAvIHtsZXR0ZXIuZGVwYXJ0bWVudE5hbWV9XHJcbiAgICAgICAgICAgICAgICAgIDwvcD5cclxuICAgICAgICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgICAgICAgICkpfVxyXG4gICAgICAgICAgICA8L2Rpdj5cclxuICAgICAgICAgICkgOiAoXHJcbiAgICAgICAgICAgIDxFbXB0eVN0YXRlIG1lc3NhZ2U9XCJJc3N1ZWQgbGV0dGVycyB3aWxsIGFwcGVhciBoZXJlIG9uY2UgdGhlIHJlZ2lzdGVyIHN0YXJ0cyBmaWxsaW5nIHVwLlwiIC8+XHJcbiAgICAgICAgICApfVxyXG4gICAgICAgIDwvYXJ0aWNsZT5cclxuXHJcbiAgICAgICAgPGFydGljbGUgY2xhc3NOYW1lPVwicGFuZWwgcGFuZWwtYWNjZW50XCI+XHJcbiAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cInBhbmVsLWhlYWRpbmdcIj5cclxuICAgICAgICAgICAgPGRpdj5cclxuICAgICAgICAgICAgICA8cCBjbGFzc05hbWU9XCJleWVicm93XCI+Q2hlY2tsaXN0PC9wPlxyXG4gICAgICAgICAgICAgIDxoMz5TdWdnZXN0ZWQgbmV4dCBzdGVwczwvaDM+XHJcbiAgICAgICAgICAgIDwvZGl2PlxyXG4gICAgICAgICAgPC9kaXY+XHJcbiAgICAgICAgICA8dWwgY2xhc3NOYW1lPVwiY2hlY2tsaXN0XCI+XHJcbiAgICAgICAgICAgIDxsaT5BZGQgZWFjaCBjb21wYW55IHdpdGggc2hvcnQgY29kZSwgY29udGFjdCBkZXRhaWxzLCBhbmQgZGVmYXVsdCByZWZlcmVuY2UgZm9ybWF0LjwvbGk+XHJcbiAgICAgICAgICAgIDxsaT5DcmVhdGUgZGVwYXJ0bWVudHMgdW5kZXIgZWFjaCBjb21wYW55IGJlZm9yZSBpc3N1aW5nIGxldHRlcnMuPC9saT5cclxuICAgICAgICAgICAgPGxpPk1haW50YWluIG9uZSB0ZW1wbGF0ZSBwZXIgbGV0dGVyIHR5cGUgZm9yIGNsZWFuZXIgaXNzdWluZyBmbG93LjwvbGk+XHJcbiAgICAgICAgICAgIDxsaT5FeHBvcnQgdGhlIHJlZ2lzdGVyIHJlZ3VsYXJseSBmb3IgbWFuYWdlbWVudCByZXBvcnRpbmcuPC9saT5cclxuICAgICAgICAgIDwvdWw+XHJcbiAgICAgICAgPC9hcnRpY2xlPlxyXG4gICAgICA8L2Rpdj5cclxuICAgIDwvc2VjdGlvbj5cclxuICApO1xyXG59XHJcbiJdLCJmaWxlIjoiQzovVXNlcnMvZGVsbC9EZXNrdG9wL2p6YXJyX2xldHRlci9zcmMvdmlld3MvRGFzaGJvYXJkVmlldy5qc3gifQ==

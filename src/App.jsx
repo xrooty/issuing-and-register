@@ -13,10 +13,12 @@ import UsersView from "./views/UsersView";
 import RolesView from "./views/RolesView";
 import ActivityView from "./views/ActivityView";
 import AdminView from "./views/AdminView";
+import ExportsView from "./views/ExportsView";
 import { normalizeData } from "./data/seedData";
 import { downloadTextFile } from "./utils/files";
 import {
   applyReferencePattern,
+  buildClientExcelExport,
   buildLetterPreviewModel,
   buildLetterValueMap,
   buildRegisterExportCsv,
@@ -77,6 +79,8 @@ const DEFAULT_PERMISSION_MODULES = [
   "admin",
   "client_fields",
 ];
+const HIDDEN_PERMISSION_MODULES = new Set(["reports"]);
+const VALID_PERMISSION_MODULES = new Set(DEFAULT_PERMISSION_MODULES);
 const ACCESS_CONFIG_REPORT_TYPE = "system_access_config";
 const ACTIVITY_LOGGING_SETTING_KEY = "activity_logging_enabled";
 
@@ -132,6 +136,7 @@ const VIEWS = [
   { id: "templates", label: "Templates" },
   { id: "issue", label: "Issue Letter" },
   { id: "register", label: "Register" },
+  { id: "exports", label: "Exports" },
   { id: "clients-create", label: "Create Client" },
   { id: "clients-all", label: "All Clients" },
   { id: "clients-profile", label: "Client Profile", showInNav: false },
@@ -303,7 +308,10 @@ function mapClient(row) {
 }
 
 function mapUser(row) {
-  return row;
+  return {
+    ...row,
+    department_name: row.department_name || "",
+  };
 }
 
 function mapActivity(row) {
@@ -324,6 +332,19 @@ function mapActivity(row) {
     client_id: parsed?.client_id || null,
     issued_by_name: parsed?.issued_by_name || "",
   };
+}
+
+function hydrateActivityClientNames(activity = [], clients = []) {
+  const clientById = new Map((clients || []).map((client) => [client.id, client]));
+  return (activity || []).map((entry) => {
+    const clientId = entry.client_id || (entry.entity === "clients" ? entry.entity_id : null);
+    const client = clientId ? clientById.get(clientId) : null;
+    return {
+      ...entry,
+      client_id: clientId || entry.client_id || null,
+      client_name: entry.client_name || client?.client_name || client?.display_name || "",
+    };
+  });
 }
 
 function mapReport(row) {
@@ -375,12 +396,22 @@ function normalizeRoleName(role) {
   return value;
 }
 
+function normalizePermissionModuleName(module) {
+  return String(module || "").trim();
+}
+
+function isValidPermissionModule(module) {
+  const moduleName = normalizePermissionModuleName(module);
+  return VALID_PERMISSION_MODULES.has(moduleName) && !HIDDEN_PERMISSION_MODULES.has(moduleName);
+}
+
 function hasFullAccessRole(role) {
   return normalizeRoleName(role) === FULL_ACCESS_ROLE;
 }
 
 function buildRolePermissionMatrix(roles = [], modules = [], rolePermissionRows = []) {
   const output = {};
+  const moduleSet = new Set(modules);
   roles.forEach((role) => {
     output[role] = {};
     modules.forEach((module) => {
@@ -394,8 +425,10 @@ function buildRolePermissionMatrix(roles = [], modules = [], rolePermissionRows 
   });
   (rolePermissionRows || []).forEach((row) => {
     const role = normalizeRoleName(row.role);
+    const module = normalizePermissionModuleName(row.module);
+    if (!moduleSet.has(module)) return;
     if (!output[role]) output[role] = {};
-    output[role][row.module] = {
+    output[role][module] = {
       view: !!row.can_view,
       create: !!row.can_create,
       edit: !!row.can_edit,
@@ -411,23 +444,83 @@ function applyUserPermissionOverrides(base = {}, overrideRows = []) {
     output[module] = { ...permissions };
   });
   (overrideRows || []).forEach((row) => {
-    const current = output[row.module] || { view: false, create: false, edit: false, delete: false };
-    output[row.module] = {
+    const module = normalizePermissionModuleName(row.module);
+    if (!Object.prototype.hasOwnProperty.call(output, module)) return;
+    const current = output[module] || { view: false, create: false, edit: false, delete: false };
+    output[module] = {
       view: typeof row.can_view === "boolean" ? row.can_view : current.view,
       create: typeof row.can_create === "boolean" ? row.can_create : current.create,
       edit: typeof row.can_edit === "boolean" ? row.can_edit : current.edit,
       delete: typeof row.can_delete === "boolean" ? row.can_delete : current.delete,
     };
-    if (output[row.module].create || output[row.module].edit || output[row.module].delete) {
-      output[row.module].view = true;
+    if (output[module].create || output[module].edit || output[module].delete) {
+      output[module].view = true;
     }
-    if (!output[row.module].view) {
-      output[row.module].create = false;
-      output[row.module].edit = false;
-      output[row.module].delete = false;
+    if (!output[module].view) {
+      output[module].create = false;
+      output[module].edit = false;
+      output[module].delete = false;
     }
   });
   return output;
+}
+
+function cleanDepartmentNames(list = []) {
+  return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+function buildScopeResolver({ currentRole, currentUserProfile, roleDataScopes = [], userPermissions = [] }) {
+  return function resolveScope(module) {
+    if (hasFullAccessRole(currentRole)) {
+      return { scope_type: "all_departments", department_names: [] };
+    }
+
+    const roleScope = (roleDataScopes || []).find((row) => normalizeRoleName(row.role) === currentRole && row.module === module);
+    const userScope = currentUserProfile?.id
+      ? (userPermissions || []).find((row) => row.user_id === currentUserProfile.id && row.module === module)
+      : null;
+    const scopeType = userScope?.scope_type || roleScope?.scope_type || "own_department";
+
+    if (scopeType === "selected_departments") {
+      return { scope_type: scopeType, department_names: cleanDepartmentNames(userScope?.department_names || roleScope?.department_names || []) };
+    }
+    if (scopeType === "own_data") {
+      return { scope_type: scopeType, department_names: [] };
+    }
+    return { scope_type: "own_department", department_names: cleanDepartmentNames([currentUserProfile?.department_name]) };
+  };
+}
+
+function filterDepartmentsByScope(departments = [], scope = {}) {
+  if (scope.scope_type === "all_departments") {
+    return departments;
+  }
+  const allowed = new Set(cleanDepartmentNames(scope.department_names));
+  if (!allowed.size) {
+    return [];
+  }
+  return departments.filter((department) => allowed.has(department.name));
+}
+
+function filterTemplatesByDepartments(templates = [], departments = []) {
+  const ids = new Set(departments.map((department) => department.id));
+  return templates.filter((template) => ids.has(template.departmentId));
+}
+
+function filterLettersByScope(letters = [], departments = [], scope = {}, currentUserProfile = null) {
+  if (scope.scope_type === "all_departments") {
+    return letters;
+  }
+  if (scope.scope_type === "own_data") {
+    return letters.filter((letter) => letter.issued_by_user_id && letter.issued_by_user_id === currentUserProfile?.id);
+  }
+  const ids = new Set(departments.map((department) => department.id));
+  return letters.filter((letter) => ids.has(letter.departmentId));
+}
+
+function filterCompaniesByDepartments(companies = [], departments = []) {
+  const companyIds = new Set(departments.map((department) => department.companyId));
+  return companies.filter((company) => companyIds.has(company.id));
 }
 
 function mapClientField(row) {
@@ -557,7 +650,7 @@ async function findUserProfileByEmail(email) {
 
   return supabase
     .from("users")
-    .select("id, email, full_name, role, active")
+    .select("id, email, full_name, role, department_name, active")
     .ilike("email", normalizedEmail)
     .maybeSingle();
 }
@@ -753,7 +846,7 @@ async function fetchBootstrapData() {
     sequences: (sequencesRes.data || []).map((item) => ({ key: item.key, current: Number(item.current || 0) })),
     clients: (clientsRes.data || []).map(mapClient),
     users: (usersRes.data || []).map(mapUser),
-    activity: (activityRes.data || []).map(mapActivity),
+    activity: hydrateActivityClientNames((activityRes.data || []).map(mapActivity), (clientsRes.data || []).map(mapClient)),
     reports: allReports.filter((report) => String(report.type || "") !== ACCESS_CONFIG_REPORT_TYPE),
     rolePermissions: (rolePermissionsRes.data || []).map(mapRolePermission),
     roleDataScopes: roleDataScopesRes.error ? [] : (roleDataScopesRes.data || []).map(mapRoleDataScope),
@@ -837,15 +930,50 @@ function splitClientPayloadByStorage(payload) {
 
   const resolvedClientCode = String(dbPayload.client_code || "").trim();
   if (!resolvedClientCode) {
-    const nameToken = resolvedClientName
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "")
-      .slice(0, 6);
-    const fallbackToken = createId().replace(/-/g, "").slice(0, 6).toUpperCase();
-    dbPayload.client_code = nameToken || fallbackToken;
+    dbPayload.client_code = buildClientCodeBase(resolvedClientName);
+  } else {
+    dbPayload.client_code = normalizeClientCode(resolvedClientCode);
   }
 
   return { dbPayload, customPayload };
+}
+
+function normalizeClientCode(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "")
+    .slice(0, 12);
+}
+
+function buildClientCodeBase(clientName = "") {
+  const nameToken = normalizeClientCode(clientName).slice(0, 6);
+  const fallbackToken = createId().replace(/-/g, "").slice(0, 6).toUpperCase();
+  return nameToken || fallbackToken;
+}
+
+function buildUniqueClientCode(baseCode, clients = [], excludeClientId = "") {
+  const base = normalizeClientCode(baseCode) || buildClientCodeBase();
+  const usedCodes = new Set(
+    (clients || [])
+      .filter((client) => !excludeClientId || client.id !== excludeClientId)
+      .map((client) => normalizeClientCode(client.client_code))
+      .filter(Boolean),
+  );
+
+  if (!usedCodes.has(base)) {
+    return base;
+  }
+
+  for (let index = 2; index < 10000; index += 1) {
+    const suffix = String(index).padStart(3, "0");
+    const candidate = `${base.slice(0, Math.max(1, 12 - suffix.length))}${suffix}`;
+    if (!usedCodes.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return createId().replace(/-/g, "").slice(0, 12).toUpperCase();
 }
 
 function isUuid(value) {
@@ -870,14 +998,7 @@ export default function App() {
   const [activeClientProfileId, setActiveClientProfileId] = useState("");
   const [clientProfileMode, setClientProfileMode] = useState("view");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-
-  const supabaseHost = useMemo(() => {
-    try {
-      return new URL(import.meta.env.VITE_SUPABASE_URL || "").host || "";
-    } catch {
-      return "";
-    }
-  }, []);
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -897,6 +1018,18 @@ export default function App() {
     const next = await fetchBootstrapData();
     setData(next);
     return next;
+  }
+
+  async function loadLatestData() {
+    setIsRefreshingData(true);
+    try {
+      await refreshData();
+      notify("Latest data loaded");
+    } catch (error) {
+      notify(`Latest data load failed: ${error.message}`);
+    } finally {
+      setIsRefreshingData(false);
+    }
   }
 
   async function logActivity(action, entity, details, options = {}) {
@@ -1021,18 +1154,6 @@ export default function App() {
     };
   }, [activeView, issueDraft, pendingPrint, previewLetterId]);
 
-  const registerRows = buildRegisterRows(data);
-  const recentLetters = registerRows.slice(0, 5);
-  const preview = buildLetterPreviewModel({ data, draft: issueDraft, previewLetterId });
-  const metrics = [
-    { label: "Companies", value: data.companies.length },
-    { label: "Departments", value: data.departments.length },
-    { label: "Template Types", value: data.templateTypes.length },
-    { label: "Templates", value: data.templates.length },
-    { label: "Issued Letters", value: data.letters.length },
-    { label: "Users", value: data.users.length },
-    { label: "Clients", value: data.clients.length },
-  ];
   const currentUserProfile = useMemo(() => {
     const profile = findUserProfileInData(data.users, session?.user, session?.user?.email);
     return profile ? { ...profile, role: normalizeRoleName(profile.role) } : null;
@@ -1046,11 +1167,11 @@ export default function App() {
     return Array.from(new Set([...roleTableRoles, ...permissionRoles, ...scopeRoles]));
   }, [data.roleDataScopes, data.rolePermissions, roleTableRoles]);
   const dynamicPermissionModules = useMemo(() => {
-    const dbModules = (data.permissionModules || []).map((row) => String(row.name || "").trim()).filter(Boolean);
-    const permissionModules = (data.rolePermissions || []).map((row) => String(row.module || "").trim()).filter(Boolean);
-    const scopeModules = (data.roleDataScopes || []).map((row) => String(row.module || "").trim()).filter(Boolean);
-    const overrideModules = (data.userPermissions || []).map((row) => String(row.module || "").trim()).filter(Boolean);
-    return Array.from(new Set([...DEFAULT_PERMISSION_MODULES, ...dbModules, ...permissionModules, ...scopeModules, ...overrideModules]));
+    const dbModules = (data.permissionModules || [])
+      .map((row) => normalizePermissionModuleName(row.name))
+      .filter(isValidPermissionModule);
+    return Array.from(new Set([...DEFAULT_PERMISSION_MODULES, ...dbModules]))
+      .filter(isValidPermissionModule);
   }, [data.permissionModules, data.roleDataScopes, data.rolePermissions, data.userPermissions]);
   const currentRole = normalizeRoleName(currentUserProfile?.role || "");
   const allPermissionsByRole = useMemo(() => {
@@ -1063,20 +1184,84 @@ export default function App() {
       : [];
     return applyUserPermissionOverrides(base, overrides);
   }, [allPermissionsByRole, currentRole, currentUserProfile?.id, data.userPermissions]);
+  const resolveDataScope = useMemo(() => buildScopeResolver({
+    currentRole,
+    currentUserProfile,
+    roleDataScopes: data.roleDataScopes,
+    userPermissions: data.userPermissions,
+  }), [currentRole, currentUserProfile, data.roleDataScopes, data.userPermissions]);
+  const scopedData = useMemo(() => {
+    const dashboardScope = resolveDataScope("dashboard");
+    const dashboardDepartments = filterDepartmentsByScope(data.departments, dashboardScope);
+    const dashboardLetters = filterLettersByScope(data.letters, dashboardDepartments, dashboardScope, currentUserProfile);
+    const dashboardTemplates = filterTemplatesByDepartments(data.templates, dashboardDepartments);
+    const dashboardCompanies = filterCompaniesByDepartments(data.companies, dashboardDepartments);
+
+    const departmentScope = resolveDataScope("departments");
+    const visibleDepartments = filterDepartmentsByScope(data.departments, departmentScope);
+
+    const templateScope = resolveDataScope("templates");
+    const templateDepartments = filterDepartmentsByScope(data.departments, templateScope);
+
+    const issueScope = resolveDataScope("issue");
+    const issueDepartments = filterDepartmentsByScope(data.departments, issueScope);
+
+    const registerScope = resolveDataScope("register");
+    const registerDepartments = filterDepartmentsByScope(data.departments, registerScope);
+    const registerLetters = filterLettersByScope(data.letters, registerDepartments, registerScope, currentUserProfile);
+
+    return {
+      dashboard: {
+        ...data,
+        companies: dashboardScope.scope_type === "all_departments" ? data.companies : dashboardCompanies,
+        departments: dashboardScope.scope_type === "all_departments" ? data.departments : dashboardDepartments,
+        templates: dashboardScope.scope_type === "all_departments" ? data.templates : dashboardTemplates,
+        letters: dashboardLetters,
+      },
+      departments: visibleDepartments,
+      templates: filterTemplatesByDepartments(data.templates, templateDepartments),
+      templateDepartments,
+      issueDepartments,
+      issueTemplates: filterTemplatesByDepartments(data.templates, issueDepartments),
+      issueCompanies: issueScope.scope_type === "all_departments" ? data.companies : filterCompaniesByDepartments(data.companies, issueDepartments),
+      register: {
+        ...data,
+        companies: registerScope.scope_type === "all_departments" ? data.companies : filterCompaniesByDepartments(data.companies, registerDepartments),
+        departments: registerScope.scope_type === "all_departments" ? data.departments : registerDepartments,
+        templates: registerScope.scope_type === "all_departments" ? data.templates : filterTemplatesByDepartments(data.templates, registerDepartments),
+        letters: registerLetters,
+      },
+    };
+  }, [currentUserProfile, data, resolveDataScope]);
+  const registerRows = buildRegisterRows(scopedData.register);
+  const recentLetters = buildRegisterRows(scopedData.dashboard).slice(0, 5);
+  const preview = buildLetterPreviewModel({ data: { ...data, companies: scopedData.issueCompanies, departments: scopedData.issueDepartments, templates: scopedData.issueTemplates }, draft: issueDraft, previewLetterId });
+  const metrics = [
+    { label: "Companies", value: scopedData.dashboard.companies.length },
+    { label: "Departments", value: scopedData.dashboard.departments.length },
+    { label: "Template Types", value: data.templateTypes.length },
+    { label: "Templates", value: scopedData.dashboard.templates.length },
+    { label: "Issued Letters", value: scopedData.dashboard.letters.length },
+    { label: "Users", value: data.users.length },
+    { label: "Clients", value: data.clients.length },
+  ];
   const activityLoggingEnabled = isActivityLoggingEnabledFromSettings(data.appSettings);
   const canManageActivityLogging = hasFullAccessRole(currentRole) || !!rolePermissions.activity_settings?.edit;
   const canManageAccess = hasFullAccessRole(currentRole);
   const canExportRegister = hasFullAccessRole(currentRole) || !!rolePermissions[DASHBOARD_ACTION_MODULES.exportRegister]?.view;
+  const canExportClients = hasFullAccessRole(currentRole) || !!rolePermissions["clients-all"]?.view;
   const canExportBackup = hasFullAccessRole(currentRole) || !!rolePermissions[DASHBOARD_ACTION_MODULES.backupJson]?.view;
-  const canRefreshDb = hasFullAccessRole(currentRole) || !!rolePermissions[DASHBOARD_ACTION_MODULES.refreshDb]?.view;
   const visibleViews = useMemo(() => {
     return VIEWS.filter((view) => {
       if (view.id === "admin" && canManageActivityLogging) {
         return true;
       }
+      if (view.id === "exports") {
+        return canExportRegister || canExportClients || canExportBackup;
+      }
       return rolePermissions[view.id]?.view !== false;
     });
-  }, [canManageActivityLogging, rolePermissions]);
+  }, [canExportBackup, canExportClients, canExportRegister, canManageActivityLogging, rolePermissions]);
   const navigableViews = useMemo(() => visibleViews.filter((view) => view.showInNav !== false), [visibleViews]);
   useEffect(() => {
     if (!visibleViews.some((view) => view.id === activeView)) {
@@ -2148,15 +2333,17 @@ export default function App() {
       const clientDisplayName = dbPayload.client_name || dbPayload.full_name || form.company || form.email || "Client";
       const payload = {
         ...dbPayload,
+        client_code: buildUniqueClientCode(dbPayload.client_code, data.clients),
         custom_fields_json: customPayload,
         created_by: currentUserProfile?.id || null,
         updated_by: currentUserProfile?.id || null,
       };
-      const result = await supabase.from("clients").insert(payload);
-      ensureSupabaseSuccess(result, "Client save failed");
+      const result = await supabase.from("clients").insert(payload).select("id").single();
+      const createdClient = ensureSupabaseSuccess(result, "Client save failed");
       const nextData = await refreshData();
       const savedClient =
-        nextData.clients.find((client) => String(client.email || "").trim().toLowerCase() === String(payload.email || "").trim().toLowerCase())
+        nextData.clients.find((client) => client.id === createdClient?.id)
+        || nextData.clients.find((client) => String(client.email || "").trim().toLowerCase() === String(payload.email || "").trim().toLowerCase())
         || nextData.clients.find((client) => String(client.client_name || "").trim() === String(clientDisplayName || "").trim());
       await logActivity("CREATE_CLIENT", "clients", `Created client: ${clientDisplayName}`, {
         entityId: savedClient?.id || null,
@@ -2204,6 +2391,9 @@ export default function App() {
       const { dbPayload, customPayload } = splitClientPayloadByStorage(patch);
       const payload = {
         ...dbPayload,
+        client_code: Object.prototype.hasOwnProperty.call(patch || {}, "client_code")
+          ? buildUniqueClientCode(dbPayload.client_code, data.clients, id)
+          : currentClient?.client_code || buildUniqueClientCode(dbPayload.client_code, data.clients, id),
         custom_fields_json: {
           ...(currentClient?.custom_fields_json || {}),
           ...customPayload,
@@ -2337,14 +2527,14 @@ export default function App() {
       const password = String(form?.password || "");
       const full_name = String(form?.full_name || "").trim();
       const requestedRole = normalizeRoleName(form?.role || "");
+      const department_name = String(form?.department_name || "").trim();
       const active = form?.active !== false;
-      const shouldCreateLogin = form?.createLogin !== false;
 
       if (!email) {
         notify("Email is required.");
         return false;
       }
-      if (shouldCreateLogin && password.length < 6) {
+      if (password.length < 6) {
         notify("Password must be at least 6 characters.");
         return false;
       }
@@ -2364,24 +2554,23 @@ export default function App() {
         : requestedRole;
 
       let authResult = { data: null, error: null };
-      if (shouldCreateLogin) {
-        const authClient = createIsolatedAuthClient();
-        authResult = await authClient.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name,
-              role,
-            },
+      const authClient = createIsolatedAuthClient();
+      authResult = await authClient.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name,
+            role,
+            department_name,
           },
-        });
-        if (authResult.error) {
-          const raw = String(authResult.error.message || "").toLowerCase();
-          if (!raw.includes("already registered") && !raw.includes("already exists")) {
-            notify(`Auth user create failed: ${authResult.error.message}`);
-            return false;
-          }
+        },
+      });
+      if (authResult.error) {
+        const raw = String(authResult.error.message || "").toLowerCase();
+        if (!raw.includes("already registered") && !raw.includes("already exists")) {
+          notify(`Auth user create failed: ${authResult.error.message}`);
+          return false;
         }
       }
 
@@ -2389,13 +2578,19 @@ export default function App() {
         email,
         full_name,
         role,
+        department_name,
         active,
       };
-      const result = existingUser
+      const syncedUserResult = existingUser
+        ? { data: existingUser, error: null }
+        : await findUserProfileByEmail(email);
+      ensureSupabaseSuccess(syncedUserResult, "User lookup failed");
+      const savedUser = syncedUserResult.data;
+      const result = savedUser
         ? await supabase
           .from("users")
           .update(profilePayload)
-          .eq("id", existingUser.id)
+          .eq("id", savedUser.id)
           .select("id")
           .single()
         : await supabase
@@ -2409,11 +2604,9 @@ export default function App() {
       ensureSupabaseSuccess(result, "User save failed");
       await refreshData();
       if (existingUser) {
-        notify(shouldCreateLogin ? "User login repaired and profile updated." : "User profile updated.");
+        notify("User login repaired and profile updated.");
       } else if (authResult.data?.session) {
         notify("User login and profile added.");
-      } else if (!shouldCreateLogin) {
-        notify("User profile added. This user cannot sign in until a Supabase Auth login is created.");
       } else {
         notify("User login and profile added. If email confirmation is enabled, confirm the email before signing in.");
       }
@@ -2471,6 +2664,7 @@ export default function App() {
     const nextRole = normalizeRoleName(patch?.role || "");
     const nextActive = patch?.active !== false;
     const full_name = String(patch?.full_name || "").trim();
+    const department_name = String(patch?.department_name || "").trim();
 
     if (!nextRole) {
       notify("Role is required.");
@@ -2495,7 +2689,7 @@ export default function App() {
     try {
       const result = await supabase
         .from("users")
-        .update({ full_name, role: nextRole, active: nextActive })
+        .update({ full_name, role: nextRole, department_name, active: nextActive })
         .eq("id", id);
       ensureSupabaseSuccess(result, "User update failed");
       await logActivity("UPDATE_USER", "users", `Updated user ${targetUser.email || targetUser.full_name || id}`, { entityId: id });
@@ -2589,6 +2783,10 @@ export default function App() {
       notify("Only admin can change user permissions.");
       return false;
     }
+    if (!isValidPermissionModule(module)) {
+      notify("Permission module is not valid for this app.");
+      return false;
+    }
     const targetUser = (data.users || []).find((user) => user.id === userId);
     if (!targetUser) {
       notify("User not found.");
@@ -2652,15 +2850,15 @@ export default function App() {
       can_create: !!row.can_create,
       can_edit: !!row.can_edit,
       can_delete: !!row.can_delete,
-    })).filter((row) => row.module);
+    })).filter((row) => isValidPermissionModule(row.module));
 
     const cleanScopeRows = (scopeRows || []).map((row) => ({
       role: normalizedRole,
       module: String(row.module || "").trim(),
-      scope_type: ["own_data", "own_department", "selected_departments", "all_departments"].includes(row.scope_type) ? row.scope_type : "own_department",
+      scope_type: ["own_data", "own_department", "selected_departments"].includes(row.scope_type) ? row.scope_type : "own_department",
       department_names: row.scope_type === "selected_departments" && Array.isArray(row.department_names) ? row.department_names : [],
       updated_at: new Date().toISOString(),
-    })).filter((row) => row.module);
+    })).filter((row) => isValidPermissionModule(row.module));
 
     try {
       let savedPermissions = patches;
@@ -2725,10 +2923,10 @@ export default function App() {
       can_create: typeof row.can_create === "boolean" ? row.can_create : null,
       can_edit: typeof row.can_edit === "boolean" ? row.can_edit : null,
       can_delete: typeof row.can_delete === "boolean" ? row.can_delete : null,
-      scope_type: row.scope_type || null,
+      scope_type: ["own_data", "own_department", "selected_departments"].includes(row.scope_type) ? row.scope_type : null,
       department_names: row.scope_type === "selected_departments" && Array.isArray(row.department_names) ? row.department_names : [],
       updated_at: new Date().toISOString(),
-    })).filter((row) => row.module);
+    })).filter((row) => isValidPermissionModule(row.module));
 
     const rowsToSave = rows.filter((row) => (
       typeof row.can_view === "boolean"
@@ -2910,6 +3108,10 @@ export default function App() {
       notify("Only admin can change access matrix.");
       return;
     }
+    if (!isValidPermissionModule(module)) {
+      notify("Permission module is not valid for this app.");
+      return;
+    }
     const normalizedRole = normalizeRoleName(role);
     const existing = (data.rolePermissions || []).find((row) => normalizeRoleName(row.role) === normalizedRole && row.module === module);
     const patch = {
@@ -3008,6 +3210,10 @@ export default function App() {
       notify("Module name is required.");
       return false;
     }
+    if (!isValidPermissionModule(moduleName)) {
+      notify("Only current app modules can be added to permissions.");
+      return false;
+    }
     if (dynamicPermissionModules.includes(moduleName)) {
       notify("Module already exists.");
       return false;
@@ -3027,6 +3233,10 @@ export default function App() {
   async function deletePermissionModule(name) {
     const moduleName = String(name || "").trim();
     if (!moduleName) {
+      return false;
+    }
+    if (!isValidPermissionModule(moduleName)) {
+      notify("Only current app modules can be removed from permissions.");
       return false;
     }
     if (!window.confirm(`Delete module "${moduleName}" from access matrix?`)) {
@@ -3105,7 +3315,7 @@ export default function App() {
       return;
     }
 
-    const csv = buildRegisterExportCsv(data);
+    const csv = buildRegisterExportCsv(scopedData.register);
     if (!csv) {
       notify("No letters available for export yet.");
       return;
@@ -3113,6 +3323,31 @@ export default function App() {
 
     downloadTextFile(`letter-register-${getTodayIso()}.csv`, csv, "text/csv;charset=utf-8;");
     notify("Register CSV exported.");
+  }
+
+  function exportClients(options = {}) {
+    if (!canExportClients) {
+      notify("You do not have permission to export clients.");
+      return;
+    }
+
+    if (options.scope === "company" && !options.companyId) {
+      notify("Select a company before exporting.");
+      return;
+    }
+
+    const file = buildClientExcelExport(data, {
+      scope: options.scope || "all",
+      companyId: options.companyId || "",
+      departmentId: options.departmentId || "ALL",
+    });
+    if (!file) {
+      notify("No clients available for this export.");
+      return;
+    }
+
+    downloadTextFile(file.fileName, file.content, "application/vnd.ms-excel;charset=utf-8;");
+    notify("Clients Excel file exported.");
   }
 
   function exportBackup() {
@@ -3147,7 +3382,7 @@ export default function App() {
         return (
           <DepartmentsView
             companies={data.companies}
-            departments={data.departments}
+            departments={scopedData.departments}
             onAddDepartment={addDepartment}
             onUpdateDepartment={updateDepartment}
             onDeleteDepartment={deleteDepartment}
@@ -3158,9 +3393,9 @@ export default function App() {
         return (
           <TemplatesView
             companies={data.companies}
-            departments={data.departments}
+            departments={scopedData.templateDepartments}
             templateTypes={data.templateTypes}
-            templates={data.templates}
+            templates={scopedData.templates}
             onAddTemplate={addTemplate}
             onUpdateTemplate={updateTemplate}
             onDeleteTemplate={deleteTemplate}
@@ -3175,9 +3410,9 @@ export default function App() {
       case "issue":
         return (
           <IssueLetterView
-            companies={data.companies}
-            departments={data.departments}
-            templates={data.templates}
+            companies={scopedData.issueCompanies}
+            departments={scopedData.issueDepartments}
+            templates={scopedData.issueTemplates}
             clients={data.clients}
             clientFields={data.clientFields}
             letters={data.letters}
@@ -3195,14 +3430,27 @@ export default function App() {
         return (
           <RegisterView
             rows={registerRows}
-            companies={data.companies}
-            departments={data.departments}
+            companies={scopedData.register.companies}
+            departments={scopedData.register.departments}
             filters={filters}
             onFilterChange={(patch) => setFilters((current) => ({ ...current, ...patch }))}
             onEditLetter={(letterId) => openLetter(letterId, { editMode: true })}
             onPrintLetter={(letterId) => openLetter(letterId, { shouldPrint: true })}
             onDeleteLetter={deleteLetter}
             onBulkDeleteLetters={bulkDeleteLetters}
+          />
+        );
+      case "exports":
+        return (
+          <ExportsView
+            companies={data.companies}
+            departments={data.departments}
+            canExportRegister={canExportRegister}
+            canExportClients={canExportClients}
+            canExportBackup={canExportBackup}
+            onExportRegister={exportRegister}
+            onExportClients={exportClients}
+            onExportBackup={exportBackup}
           />
         );
       case "clients-create":
@@ -3243,6 +3491,7 @@ export default function App() {
           <UsersView
             users={data.users}
             roles={roleTableRoles}
+            departments={data.departments}
             permissions={rolePermissions.users || { view: false, create: false, edit: false, delete: false }}
             canResetPasswords={hasFullAccessRole(currentRole)}
             onAddUser={addUser}
@@ -3259,7 +3508,7 @@ export default function App() {
       case "admin":
         return (
           <AdminView
-            stats={{ users: data.users.length, clients: data.clients.length, reports: data.reports.length, activity: data.activity.length }}
+            stats={{ users: data.users.length, clients: data.clients.length, activity: data.activity.length }}
             roles={roleTableRoles}
             modules={dynamicPermissionModules}
             users={data.users}
@@ -3283,9 +3532,12 @@ export default function App() {
   if (isLoading) {
     return (
       <div className="shell">
-        <section className="panel">
-          <h3>Connecting to Supabase...</h3>
-          <p className="hero-copy">Loading companies, departments, template types, templates, and letters directly from cloud DB.</p>
+        <section className="panel loading-panel">
+          <div className="loading-mark" aria-hidden="true" />
+          <div>
+            <h3>Connecting to Supabase...</h3>
+            <p className="hero-copy">Loading companies, departments, template types, templates, and letters directly from cloud DB.</p>
+          </div>
         </section>
       </div>
     );
@@ -3293,45 +3545,25 @@ export default function App() {
 
   if (!session) {
     return (
-      <div
-        className="shell"
-        style={{
-          position: "fixed",
-          inset: 0,
-          padding: 16,
-          boxSizing: "border-box",
-          display: "grid",
-          placeItems: "center",
-          background: "#ffffff",
-          overflow: "hidden",
-        }}
-      >
-        <section
-          className="panel"
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            maxHeight: "100%",
-            padding: 0,
-            overflow: "hidden",
-            display: "grid",
-            gridTemplateColumns: "1fr",
-            border: "1px solid rgba(148,163,184,0.25)",
-            boxShadow: "0 22px 55px rgba(0,0,0,0.42)",
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          <div style={{ padding: 28, display: "grid", alignContent: "center", gap: 16 }}>
+      <div className="auth-shell">
+        <section className="panel auth-card">
+          <div className="auth-card__brand">
+            <span className="brand-symbol">JZ</span>
             <div>
-              <p className="eyebrow" style={{ marginBottom: 8 }}>Secure Access</p>
-              <h3 style={{ margin: 0, fontSize: 30 }}>Login</h3>
-              <p style={{ marginTop: 8, color: "var(--app-ink-muted)", fontSize: 13 }}>
+              <p className="eyebrow">Secure Access</p>
+              <h3>Login</h3>
+              <p>
                 Enter your credentials to continue.
               </p>
             </div>
+          </div>
+          <div className="auth-card__body">
+            <div className="auth-card__summary">
+              <strong>Letter Site Management</strong>
+              <span>Cloud register, templates, CRM, users, and access control.</span>
+            </div>
             <form
-              className="form-grid"
-              style={{ gap: 14, display: "flex", flexDirection: "column" }}
+              className="form-grid auth-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 signIn();
@@ -3359,7 +3591,7 @@ export default function App() {
                   required
                 />
               </label>
-              <button className="button button-primary" type="submit" disabled={authSubmitting} style={{ width: "100%", justifyContent: "center", marginTop: 4 }}>
+              <button className="button button-primary auth-submit" type="submit" disabled={authSubmitting}>
                 {authSubmitting ? "Signing in..." : "Sign In"}
               </button>
             </form>
@@ -3371,72 +3603,53 @@ export default function App() {
 
   return (
     <div className="shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Letter Site Management</p>
-          <h1>Letter management, issuing, and register</h1>
-          <p className="hero-copy">
-            Manage companies, departments, templates, issue letters, and keep the register clean from one simple dashboard.
-          </p>
-        </div>
-        <div className="hero-actions" style={{ position: "relative" }}>
-          {canExportRegister ? <button className="button button-secondary" type="button" onClick={exportRegister}>Export Register CSV</button> : null}
-          {canExportBackup ? <button className="button button-secondary" type="button" onClick={exportBackup}>Backup JSON</button> : null}
-          {canRefreshDb ? (
+      <header className="app-navbar">
+        <span className="brand-symbol">JZ</span>
+
+        <nav className="tabs navbar-tabs" aria-label="Primary">
+          {navigableViews.map((view) => (
             <button
-              className="button button-secondary"
+              key={view.id}
+              className={`tab ${activeView === view.id ? "is-active" : ""}`}
               type="button"
-              onClick={async () => {
-                if (!canRefreshDb) {
-                  notify("You do not have permission to refresh DB data.");
-                  return;
-                }
-                try {
-                  await refreshData();
-                  notify("Data refreshed from DB");
-                } catch (error) {
-                  notify(`Refresh failed: ${error.message}`);
-                }
-              }}
+              aria-current={activeView === view.id ? "page" : undefined}
+              onClick={() => setActiveView(view.id)}
             >
-              Refresh DB
+              <span>{view.label}</span>
             </button>
-          ) : null}
+          ))}
+        </nav>
+
+        <div className="navbar-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={loadLatestData}
+            disabled={isRefreshingData}
+          >
+            {isRefreshingData ? "Loading..." : "Load Latest Data"}
+          </button>
+
           <button className="button button-secondary" type="button" onClick={signOut}>Logout</button>
-          <button className="button button-primary" type="button" onClick={() => setProfileMenuOpen((v) => !v)}>Profile</button>
-          {profileMenuOpen && (
-            <div style={{ position: "absolute", top: 48, right: 0, minWidth: 250, background: "var(--app-surface)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 10, display: "grid", gap: 8, zIndex: 50 }}>
-              <div style={{ padding: "4px 6px" }}>
-                <div style={{ fontSize: 12, color: "var(--app-ink-faint)" }}>{session?.user?.email || "-"}</div>
-                <div style={{ fontSize: 12, color: "var(--app-ink-muted)" }}>Role: {currentRole}</div>
+          <div className="menu-anchor">
+            <button className="button button-primary" type="button" onClick={() => setProfileMenuOpen((v) => !v)}>Profile</button>
+            {profileMenuOpen && (
+              <div className="floating-menu profile-menu">
+                <div>
+                  <span className="profile-menu__label">Signed in as</span>
+                  <strong>{session?.user?.email || "-"}</strong>
+                </div>
+                <div>
+                  <span className="profile-menu__label">Role</span>
+                  <strong>{currentRole}</strong>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </header>
 
-      <section className="status-bar">
-        <div>
-          <strong>Mode:</strong> <span>Supabase cloud data mode.</span>
-          {supabaseHost ? <span> Host: <code>{supabaseHost}</code></span> : null}
-        </div>
-        <div>All changes sync to DB</div>
-      </section>
-
-      <nav className="tabs" aria-label="Primary">
-        {navigableViews.map((view) => (
-          <button
-            key={view.id}
-            className={`tab ${activeView === view.id ? "is-active" : ""}`}
-            type="button"
-            onClick={() => setActiveView(view.id)}
-          >
-            {view.label}
-          </button>
-        ))}
-      </nav>
-
-      <main>{renderActiveView()}</main>
+      <main className="app-main">{renderActiveView()}</main>
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
   );

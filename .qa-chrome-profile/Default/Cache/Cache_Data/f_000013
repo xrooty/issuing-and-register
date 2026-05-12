@@ -1,0 +1,223 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/views/AdminView.jsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=d05ab475"; const Fragment = __vite__cjsImport0_react_jsxDevRuntime["Fragment"]; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+var _s = $RefreshSig$();
+import __vite__cjsImport3_react from "/node_modules/.vite/deps/react.js?v=d05ab475"; const useEffect = __vite__cjsImport3_react["useEffect"]; const useState = __vite__cjsImport3_react["useState"];
+import AdminAccessView from "/src/views/AdminAccessView.jsx";
+import AdminRoleUsersView from "/src/views/AdminRoleUsersView.jsx";
+export default function AdminView({
+  stats,
+  roles = [],
+  modules = [],
+  users = [],
+  allPermissions = {},
+  roleDataScopes = [],
+  userPermissions = [],
+  departments = [],
+  activityLoggingEnabled = true,
+  canManageAccess = false,
+  canManageActivityLogging = false,
+  onSaveRoleAccess,
+  onSaveUserPermissionOverrides,
+  onUpdateActivityLoggingEnabled
+}) {
+  _s();
+  const [tab, setTab] = useState("permissions");
+  const [selectedRole, setSelectedRole] = useState(roles.find((role) => role !== "admin") || roles[0] || "admin");
+  const [savingActivitySetting, setSavingActivitySetting] = useState(false);
+  useEffect(() => {
+    if (roles.length && !roles.includes(selectedRole)) {
+      setSelectedRole(roles.find((role) => role !== "admin") || roles[0]);
+    }
+  }, [roles, selectedRole]);
+  const activeTab = tab === "overrides" ? "overrides" : "permissions";
+  return /* @__PURE__ */ jsxDEV("section", { className: "view is-active admin-view", children: [
+    canManageActivityLogging ? /* @__PURE__ */ jsxDEV("article", { className: "panel", children: [
+      /* @__PURE__ */ jsxDEV("div", { className: "panel-heading", children: [
+        /* @__PURE__ */ jsxDEV("div", { children: [
+          /* @__PURE__ */ jsxDEV("p", { className: "eyebrow", children: "Activity History" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+            lineNumber: 55,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("h3", { children: "History storage" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+            lineNumber: 56,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+          lineNumber: 54,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV(
+          "button",
+          {
+            className: `button ${activityLoggingEnabled ? "button-primary" : "button-secondary"}`,
+            type: "button",
+            disabled: savingActivitySetting,
+            onClick: async () => {
+              setSavingActivitySetting(true);
+              await onUpdateActivityLoggingEnabled?.(!activityLoggingEnabled);
+              setSavingActivitySetting(false);
+            },
+            children: savingActivitySetting ? "Saving..." : activityLoggingEnabled ? "Enabled" : "Disabled"
+          },
+          void 0,
+          false,
+          {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+            lineNumber: 58,
+            columnNumber: 13
+          },
+          this
+        )
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+        lineNumber: 53,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDEV("p", { className: "form-hint", children: "Existing activity rows stay saved. This switch only controls whether new history entries are stored." }, void 0, false, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+        lineNumber: 71,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+      lineNumber: 52,
+      columnNumber: 7
+    }, this) : null,
+    canManageAccess ? /* @__PURE__ */ jsxDEV(Fragment, { children: [
+      /* @__PURE__ */ jsxDEV("article", { className: "panel", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "button-row", style: { marginBottom: 16 }, children: [
+          /* @__PURE__ */ jsxDEV("button", { className: `button ${activeTab === "permissions" ? "button-primary" : "button-secondary"}`, type: "button", onClick: () => setTab("permissions"), children: "Permissions" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+            lineNumber: 80,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("button", { className: `button ${activeTab === "overrides" ? "button-primary" : "button-secondary"}`, type: "button", onClick: () => setTab("overrides"), children: "Overrides" }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+            lineNumber: 83,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+          lineNumber: 79,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV("div", { className: "filters", children: /* @__PURE__ */ jsxDEV("label", { children: [
+          "Role",
+          /* @__PURE__ */ jsxDEV("select", { value: selectedRole, onChange: (e) => setSelectedRole(e.target.value), children: roles.map(
+            (role) => /* @__PURE__ */ jsxDEV("option", { value: role, children: role }, role, false, {
+              fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+              lineNumber: 91,
+              columnNumber: 17
+            }, this)
+          ) }, void 0, false, {
+            fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+            lineNumber: 89,
+            columnNumber: 17
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+          lineNumber: 88,
+          columnNumber: 15
+        }, this) }, void 0, false, {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+          lineNumber: 87,
+          columnNumber: 13
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+        lineNumber: 78,
+        columnNumber: 11
+      }, this),
+      activeTab === "permissions" ? /* @__PURE__ */ jsxDEV(
+        AdminAccessView,
+        {
+          role: selectedRole,
+          modules,
+          allPermissions,
+          roleDataScopes,
+          departments,
+          onSaveRoleAccess
+        },
+        void 0,
+        false,
+        {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+          lineNumber: 98,
+          columnNumber: 9
+        },
+        this
+      ) : /* @__PURE__ */ jsxDEV(
+        AdminRoleUsersView,
+        {
+          role: selectedRole,
+          users,
+          modules,
+          userPermissions,
+          departments,
+          onSaveUserPermissionOverrides
+        },
+        void 0,
+        false,
+        {
+          fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+          lineNumber: 107,
+          columnNumber: 9
+        },
+        this
+      )
+    ] }, void 0, true, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+      lineNumber: 77,
+      columnNumber: 7
+    }, this) : !canManageActivityLogging ? /* @__PURE__ */ jsxDEV("article", { className: "panel", children: /* @__PURE__ */ jsxDEV("p", { className: "form-hint", children: "You do not have access to admin settings." }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+      lineNumber: 119,
+      columnNumber: 11
+    }, this) }, void 0, false, {
+      fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+      lineNumber: 118,
+      columnNumber: 7
+    }, this) : null
+  ] }, void 0, true, {
+    fileName: "C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx",
+    lineNumber: 50,
+    columnNumber: 5
+  }, this);
+}
+_s(AdminView, "IwU7WIqpdj5BI3/7/tytBY1ndjM=");
+_c = AdminView;
+var _c;
+$RefreshReg$(_c, "AdminView");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/dell/Desktop/jzarr_letter/src/views/AdminView.jsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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QUFBQTtBQUFBO0FBQUE7QUFBQSxXQUFrRSxLQURwRTtBQUFBO0FBQUE7QUFBQTtBQUFBLFdBRUEsSUFDRTtBQUFBLE9BdkVOO0FBQUE7QUFBQTtBQUFBO0FBQUEsU0F3RUE7QUFFSjtBQUFDSSxHQXBHdUJmLFdBQVM7QUFBQSxLQUFUQTtBQUFTLElBQUFnQztBQUFBLGFBQUFBLElBQUEiLCJuYW1lcyI6WyJ1c2VFZmZlY3QiLCJ1c2VTdGF0ZSIsIkFkbWluQWNjZXNzVmlldyIsIkFkbWluUm9sZVVzZXJzVmlldyIsIkFkbWluVmlldyIsInN0YXRzIiwicm9sZXMiLCJtb2R1bGVzIiwidXNlcnMiLCJhbGxQZXJtaXNzaW9ucyIsInJvbGVEYXRhU2NvcGVzIiwidXNlclBlcm1pc3Npb25zIiwiZGVwYXJ0bWVudHMiLCJhY3Rpdml0eUxvZ2dpbmdFbmFibGVkIiwiY2FuTWFuYWdlQWNjZXNzIiwiY2FuTWFuYWdlQWN0aXZpdHlMb2dnaW5nIiwib25TYXZlUm9sZUFjY2VzcyIsIm9uU2F2ZVVzZXJQZXJtaXNzaW9uT3ZlcnJpZGVzIiwib25VcGRhdGVBY3Rpdml0eUxvZ2dpbmdFbmFibGVkIiwiX3MiLCJ0YWIiLCJzZXRUYWIiLCJzZWxlY3RlZFJvbGUiLCJzZXRTZWxlY3RlZFJvbGUiLCJmaW5kIiwicm9sZSIsInNhdmluZ0FjdGl2aXR5U2V0dGluZyIsInNldFNhdmluZ0FjdGl2aXR5U2V0dGluZyIsImxlbmd0aCIsImluY2x1ZGVzIiwiYWN0aXZlVGFiIiwibWFyZ2luQm90dG9tIiwiZSIsInRhcmdldCIsInZhbHVlIiwibWFwIiwiX2MiXSwiaWdub3JlTGlzdCI6W10sInNvdXJjZXMiOlsiQWRtaW5WaWV3LmpzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyB1c2VFZmZlY3QsIHVzZVN0YXRlIH0gZnJvbSBcInJlYWN0XCI7XG5pbXBvcnQgQWRtaW5BY2Nlc3NWaWV3IGZyb20gXCIuL0FkbWluQWNjZXNzVmlld1wiO1xuaW1wb3J0IEFkbWluUm9sZVVzZXJzVmlldyBmcm9tIFwiLi9BZG1pblJvbGVVc2Vyc1ZpZXdcIjtcblxuZXhwb3J0IGRlZmF1bHQgZnVuY3Rpb24gQWRtaW5WaWV3KHtcbiAgc3RhdHMsXG4gIHJvbGVzID0gW10sXG4gIG1vZHVsZXMgPSBbXSxcbiAgdXNlcnMgPSBbXSxcbiAgYWxsUGVybWlzc2lvbnMgPSB7fSxcbiAgcm9sZURhdGFTY29wZXMgPSBbXSxcbiAgdXNlclBlcm1pc3Npb25zID0gW10sXG4gIGRlcGFydG1lbnRzID0gW10sXG4gIGFjdGl2aXR5TG9nZ2luZ0VuYWJsZWQgPSB0cnVlLFxuICBjYW5NYW5hZ2VBY2Nlc3MgPSBmYWxzZSxcbiAgY2FuTWFuYWdlQWN0aXZpdHlMb2dnaW5nID0gZmFsc2UsXG4gIG9uU2F2ZVJvbGVBY2Nlc3MsXG4gIG9uU2F2ZVVzZXJQZXJtaXNzaW9uT3ZlcnJpZGVzLFxuICBvblVwZGF0ZUFjdGl2aXR5TG9nZ2luZ0VuYWJsZWQsXG59KSB7XG4gIGNvbnN0IFt0YWIsIHNldFRhYl0gPSB1c2VTdGF0ZShcInBlcm1pc3Npb25zXCIpO1xuICBjb25zdCBbc2VsZWN0ZWRSb2xlLCBzZXRTZWxlY3RlZFJvbGVdID0gdXNlU3RhdGUocm9sZXMuZmluZCgocm9sZSkgPT4gcm9sZSAhPT0gXCJhZG1pblwiKSB8fCByb2xlc1swXSB8fCBcImFkbWluXCIpO1xuICBjb25zdCBbc2F2aW5nQWN0aXZpdHlTZXR0aW5nLCBzZXRTYXZpbmdBY3Rpdml0eVNldHRpbmddID0gdXNlU3RhdGUoZmFsc2UpO1xuICB1c2VFZmZlY3QoKCkgPT4ge1xuICAgIGlmIChyb2xlcy5sZW5ndGggJiYgIXJvbGVzLmluY2x1ZGVzKHNlbGVjdGVkUm9sZSkpIHtcbiAgICAgIHNldFNlbGVjdGVkUm9sZShyb2xlcy5maW5kKChyb2xlKSA9PiByb2xlICE9PSBcImFkbWluXCIpIHx8IHJvbGVzWzBdKTtcbiAgICB9XG4gIH0sIFtyb2xlcywgc2VsZWN0ZWRSb2xlXSk7XG4gIGNvbnN0IGFjdGl2ZVRhYiA9IHRhYiA9PT0gXCJvdmVycmlkZXNcIiA/IFwib3ZlcnJpZGVzXCIgOiBcInBlcm1pc3Npb25zXCI7XG4gIHJldHVybiAoXG4gICAgPHNlY3Rpb24gY2xhc3NOYW1lPVwidmlldyBpcy1hY3RpdmUgYWRtaW4tdmlld1wiPlxuICAgICAge2Nhbk1hbmFnZUFjdGl2aXR5TG9nZ2luZyA/IChcbiAgICAgICAgPGFydGljbGUgY2xhc3NOYW1lPVwicGFuZWxcIj5cbiAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cInBhbmVsLWhlYWRpbmdcIj5cbiAgICAgICAgICAgIDxkaXY+XG4gICAgICAgICAgICAgIDxwIGNsYXNzTmFtZT1cImV5ZWJyb3dcIj5BY3Rpdml0eSBIaXN0b3J5PC9wPlxuICAgICAgICAgICAgICA8aDM+SGlzdG9yeSBzdG9yYWdlPC9oMz5cbiAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgICAgPGJ1dHRvblxuICAgICAgICAgICAgICBjbGFzc05hbWU9e2BidXR0b24gJHthY3Rpdml0eUxvZ2dpbmdFbmFibGVkID8gXCJidXR0b24tcHJpbWFyeVwiIDogXCJidXR0b24tc2Vjb25kYXJ5XCJ9YH1cbiAgICAgICAgICAgICAgdHlwZT1cImJ1dHRvblwiXG4gICAgICAgICAgICAgIGRpc2FibGVkPXtzYXZpbmdBY3Rpdml0eVNldHRpbmd9XG4gICAgICAgICAgICAgIG9uQ2xpY2s9e2FzeW5jICgpID0+IHtcbiAgICAgICAgICAgICAgICBzZXRTYXZpbmdBY3Rpdml0eVNldHRpbmcodHJ1ZSk7XG4gICAgICAgICAgICAgICAgYXdhaXQgb25VcGRhdGVBY3Rpdml0eUxvZ2dpbmdFbmFibGVkPy4oIWFjdGl2aXR5TG9nZ2luZ0VuYWJsZWQpO1xuICAgICAgICAgICAgICAgIHNldFNhdmluZ0FjdGl2aXR5U2V0dGluZyhmYWxzZSk7XG4gICAgICAgICAgICAgIH19XG4gICAgICAgICAgICA+XG4gICAgICAgICAgICAgIHtzYXZpbmdBY3Rpdml0eVNldHRpbmcgPyBcIlNhdmluZy4uLlwiIDogYWN0aXZpdHlMb2dnaW5nRW5hYmxlZCA/IFwiRW5hYmxlZFwiIDogXCJEaXNhYmxlZFwifVxuICAgICAgICAgICAgPC9idXR0b24+XG4gICAgICAgICAgPC9kaXY+XG4gICAgICAgICAgPHAgY2xhc3NOYW1lPVwiZm9ybS1oaW50XCI+XG4gICAgICAgICAgICBFeGlzdGluZyBhY3Rpdml0eSByb3dzIHN0YXkgc2F2ZWQuIFRoaXMgc3dpdGNoIG9ubHkgY29udHJvbHMgd2hldGhlciBuZXcgaGlzdG9yeSBlbnRyaWVzIGFyZSBzdG9yZWQuXG4gICAgICAgICAgPC9wPlxuICAgICAgICA8L2FydGljbGU+XG4gICAgICApIDogbnVsbH1cbiAgICAgIHtjYW5NYW5hZ2VBY2Nlc3MgPyAoXG4gICAgICAgIDw+XG4gICAgICAgICAgPGFydGljbGUgY2xhc3NOYW1lPVwicGFuZWxcIj5cbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiYnV0dG9uLXJvd1wiIHN0eWxlPXt7IG1hcmdpbkJvdHRvbTogMTYgfX0+XG4gICAgICAgICAgICAgIDxidXR0b24gY2xhc3NOYW1lPXtgYnV0dG9uICR7YWN0aXZlVGFiID09PSBcInBlcm1pc3Npb25zXCIgPyBcImJ1dHRvbi1wcmltYXJ5XCIgOiBcImJ1dHRvbi1zZWNvbmRhcnlcIn1gfSB0eXBlPVwiYnV0dG9uXCIgb25DbGljaz17KCkgPT4gc2V0VGFiKFwicGVybWlzc2lvbnNcIil9PlxuICAgICAgICAgICAgICAgIFBlcm1pc3Npb25zXG4gICAgICAgICAgICAgIDwvYnV0dG9uPlxuICAgICAgICAgICAgICA8YnV0dG9uIGNsYXNzTmFtZT17YGJ1dHRvbiAke2FjdGl2ZVRhYiA9PT0gXCJvdmVycmlkZXNcIiA/IFwiYnV0dG9uLXByaW1hcnlcIiA6IFwiYnV0dG9uLXNlY29uZGFyeVwifWB9IHR5cGU9XCJidXR0b25cIiBvbkNsaWNrPXsoKSA9PiBzZXRUYWIoXCJvdmVycmlkZXNcIil9PlxuICAgICAgICAgICAgICAgIE92ZXJyaWRlc1xuICAgICAgICAgICAgICA8L2J1dHRvbj5cbiAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJmaWx0ZXJzXCI+XG4gICAgICAgICAgICAgIDxsYWJlbD5Sb2xlXG4gICAgICAgICAgICAgICAgPHNlbGVjdCB2YWx1ZT17c2VsZWN0ZWRSb2xlfSBvbkNoYW5nZT17KGUpID0+IHNldFNlbGVjdGVkUm9sZShlLnRhcmdldC52YWx1ZSl9PlxuICAgICAgICAgICAgICAgICAge3JvbGVzLm1hcCgocm9sZSkgPT4gKFxuICAgICAgICAgICAgICAgICAgICA8b3B0aW9uIGtleT17cm9sZX0gdmFsdWU9e3JvbGV9Pntyb2xlfTwvb3B0aW9uPlxuICAgICAgICAgICAgICAgICAgKSl9XG4gICAgICAgICAgICAgICAgPC9zZWxlY3Q+XG4gICAgICAgICAgICAgIDwvbGFiZWw+XG4gICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICA8L2FydGljbGU+XG4gICAgICAgICAge2FjdGl2ZVRhYiA9PT0gXCJwZXJtaXNzaW9uc1wiID8gKFxuICAgICAgICAgICAgPEFkbWluQWNjZXNzVmlld1xuICAgICAgICAgICAgICByb2xlPXtzZWxlY3RlZFJvbGV9XG4gICAgICAgICAgICAgIG1vZHVsZXM9e21vZHVsZXN9XG4gICAgICAgICAgICAgIGFsbFBlcm1pc3Npb25zPXthbGxQZXJtaXNzaW9uc31cbiAgICAgICAgICAgICAgcm9sZURhdGFTY29wZXM9e3JvbGVEYXRhU2NvcGVzfVxuICAgICAgICAgICAgICBkZXBhcnRtZW50cz17ZGVwYXJ0bWVudHN9XG4gICAgICAgICAgICAgIG9uU2F2ZVJvbGVBY2Nlc3M9e29uU2F2ZVJvbGVBY2Nlc3N9XG4gICAgICAgICAgICAvPlxuICAgICAgICAgICkgOiAoXG4gICAgICAgICAgICA8QWRtaW5Sb2xlVXNlcnNWaWV3XG4gICAgICAgICAgICAgIHJvbGU9e3NlbGVjdGVkUm9sZX1cbiAgICAgICAgICAgICAgdXNlcnM9e3VzZXJzfVxuICAgICAgICAgICAgICBtb2R1bGVzPXttb2R1bGVzfVxuICAgICAgICAgICAgICB1c2VyUGVybWlzc2lvbnM9e3VzZXJQZXJtaXNzaW9uc31cbiAgICAgICAgICAgICAgZGVwYXJ0bWVudHM9e2RlcGFydG1lbnRzfVxuICAgICAgICAgICAgICBvblNhdmVVc2VyUGVybWlzc2lvbk92ZXJyaWRlcz17b25TYXZlVXNlclBlcm1pc3Npb25PdmVycmlkZXN9XG4gICAgICAgICAgICAvPlxuICAgICAgICAgICl9XG4gICAgICAgIDwvPlxuICAgICAgKSA6ICFjYW5NYW5hZ2VBY3Rpdml0eUxvZ2dpbmcgPyAoXG4gICAgICAgIDxhcnRpY2xlIGNsYXNzTmFtZT1cInBhbmVsXCI+XG4gICAgICAgICAgPHAgY2xhc3NOYW1lPVwiZm9ybS1oaW50XCI+WW91IGRvIG5vdCBoYXZlIGFjY2VzcyB0byBhZG1pbiBzZXR0aW5ncy48L3A+XG4gICAgICAgIDwvYXJ0aWNsZT5cbiAgICAgICkgOiBudWxsfVxuICAgIDwvc2VjdGlvbj5cbiAgKTtcbn1cbiJdLCJmaWxlIjoiQzovVXNlcnMvZGVsbC9EZXNrdG9wL2p6YXJyX2xldHRlci9zcmMvdmlld3MvQWRtaW5WaWV3LmpzeCJ9

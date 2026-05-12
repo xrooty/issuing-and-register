@@ -1,8 +1,14 @@
 import { useState } from "react";
+import PaginationControls from "../components/PaginationControls";
 
 export default function RolesView({ users, roles = [], onAddRole, onDeleteRole }) {
   const [newRole, setNewRole] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const counts = roles.map((role) => ({ role, count: users.filter((u) => u.role === role).length }));
+  const totalPages = Math.max(1, Math.ceil(counts.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedCounts = counts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <section className="view is-active">
@@ -20,8 +26,15 @@ export default function RolesView({ users, roles = [], onAddRole, onDeleteRole }
             Add role
           </button>
         </div>
+        <PaginationControls
+          page={currentPage}
+          pageSize={pageSize}
+          totalItems={counts.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         <div className="metrics-grid">
-          {counts.map((item) => (
+          {paginatedCounts.map((item) => (
             <article className="metric-card" key={item.role}>
               <span className="metric-label">{item.role}</span>
               <strong className="metric-value">{item.count}</strong>
