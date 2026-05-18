@@ -92,6 +92,21 @@ create table if not exists users (
   created_at timestamptz not null default now()
 );
 
+create table if not exists user_security (
+  user_id uuid primary key references users(id) on delete cascade,
+  two_factor_enabled boolean not null default false,
+  two_factor_secret text default '',
+  two_factor_verified_at timestamptz,
+  email_confirmation_enabled boolean not null default false,
+  email_confirmation_code text default '',
+  email_confirmation_sent_at timestamptz,
+  email_confirmation_expires_at timestamptz,
+  email_confirmed_at timestamptz,
+  reset_required boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists activity_log (
   id uuid primary key default gen_random_uuid(),
   action text not null,
@@ -238,6 +253,8 @@ create index if not exists idx_letters_template_id on letters(template_id);
 create index if not exists idx_letters_created_at on letters(created_at desc);
 create index if not exists idx_role_data_scopes_role on role_data_scopes(role);
 create index if not exists idx_user_permissions_user_id on user_permissions(user_id);
+create index if not exists idx_user_security_two_factor_enabled on user_security(two_factor_enabled);
+create index if not exists idx_user_security_email_confirmation_enabled on user_security(email_confirmation_enabled);
 
 create or replace function next_sequence(counter_key text)
 returns integer

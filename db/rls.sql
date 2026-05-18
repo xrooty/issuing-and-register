@@ -16,6 +16,7 @@ alter table reports enable row level security;
 alter table role_permissions enable row level security;
 alter table role_data_scopes enable row level security;
 alter table user_permissions enable row level security;
+alter table user_security enable row level security;
 alter table app_settings enable row level security;
 alter table roles enable row level security;
 alter table permission_modules enable row level security;
@@ -94,6 +95,29 @@ drop policy if exists user_permissions_read_all on user_permissions;
 drop policy if exists user_permissions_admin_write on user_permissions;
 create policy user_permissions_read_all on user_permissions for select using (true);
 create policy user_permissions_admin_write on user_permissions for all
+using (exists (
+  select 1 from users
+  where users.id = auth.uid()
+    and users.active = true
+    and users.role = 'admin'
+))
+with check (exists (
+  select 1 from users
+  where users.id = auth.uid()
+    and users.active = true
+    and users.role = 'admin'
+));
+
+drop policy if exists user_security_all on user_security;
+drop policy if exists user_security_self_read on user_security;
+drop policy if exists user_security_self_write on user_security;
+drop policy if exists user_security_admin_all on user_security;
+create policy user_security_self_read on user_security for select
+using (user_id = auth.uid());
+create policy user_security_self_write on user_security for update
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+create policy user_security_admin_all on user_security for all
 using (exists (
   select 1 from users
   where users.id = auth.uid()

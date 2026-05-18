@@ -12,11 +12,15 @@ export default function AdminView({
   userPermissions = [],
   departments = [],
   activityLoggingEnabled = true,
+  twoFactorEnabledGlobal = false,
+  emailConfirmationEnabledGlobal = false,
   canManageAccess = false,
   canManageActivityLogging = false,
   onSaveRoleAccess,
   onSaveUserPermissionOverrides,
   onUpdateActivityLoggingEnabled,
+  onUpdateTwoFactorGlobalEnabled,
+  onUpdateEmailConfirmationGlobalEnabled,
 }) {
   const [tab, setTab] = useState("permissions");
   const [selectedRole, setSelectedRole] = useState(roles.find((role) => role !== "admin") || roles[0] || "admin");
@@ -51,6 +55,35 @@ export default function AdminView({
           </div>
           <p className="form-hint">
             Existing activity rows stay saved. This switch only controls whether new history entries are stored.
+          </p>
+        </article>
+      ) : null}
+      {canManageAccess ? (
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Authentication</p>
+              <h3>Security features</h3>
+            </div>
+          </div>
+          <div className="button-row">
+            <button
+              className={`button ${twoFactorEnabledGlobal ? "button-primary" : "button-secondary"}`}
+              type="button"
+              onClick={() => onUpdateTwoFactorGlobalEnabled?.(!twoFactorEnabledGlobal)}
+            >
+              {twoFactorEnabledGlobal ? "2FA Global: On" : "2FA Global: Off"}
+            </button>
+            <button
+              className={`button ${emailConfirmationEnabledGlobal ? "button-primary" : "button-secondary"}`}
+              type="button"
+              onClick={() => onUpdateEmailConfirmationGlobalEnabled?.(!emailConfirmationEnabledGlobal)}
+            >
+              {emailConfirmationEnabledGlobal ? "Email Confirmation: On" : "Email Confirmation: Off"}
+            </button>
+          </div>
+          <p className="form-hint">
+            Global On means the feature applies to all users. When Global Off, you can still manage it per user in the Users screen.
           </p>
         </article>
       ) : null}

@@ -31,6 +31,22 @@ import {
   resolveReferencePattern,
 } from "./utils/lettering";
 import { createIsolatedAuthClient, supabase } from "./lib/supabaseClient";
+import {
+  EMAIL_CONFIRMATION_CODE_TTL_MINUTES,
+  EMAIL_CONFIRMATION_GLOBAL_SETTING_KEY,
+  TWO_FACTOR_GLOBAL_SETTING_KEY,
+  buildRecoveryKeyPreview,
+  createEmailConfirmationCode,
+  createOtpAuthUri,
+  createQrCodeUrl,
+  generateTwoFactorSecret,
+  getEffectiveTwoFactorEnabled,
+  isEmailConfirmationGloballyEnabled,
+  isTwoFactorGloballyEnabled,
+  normalizeChallengeCode,
+  toIsoMinutesFromNow,
+  verifyTotpCode,
+} from "./utils/authSecurity";
 
 const EMPTY_DATA = {
   companies: [],
@@ -46,6 +62,7 @@ const EMPTY_DATA = {
   rolePermissions: [],
   roleDataScopes: [],
   userPermissions: [],
+  userSecurity: [],
   clientFields: [],
   roles: [],
   permissionModules: [],
@@ -83,6 +100,7 @@ const HIDDEN_PERMISSION_MODULES = new Set(["reports"]);
 const VALID_PERMISSION_MODULES = new Set(DEFAULT_PERMISSION_MODULES);
 const ACCESS_CONFIG_REPORT_TYPE = "system_access_config";
 const ACTIVITY_LOGGING_SETTING_KEY = "activity_logging_enabled";
+const AUTH_ISSUER_NAME = "Letter Site Management";
 
 const CLIENT_DB_FIELDS = new Set([
   "client_name",
@@ -367,6 +385,20 @@ function mapUserPermission(row) {
   };
 }
 
+function mapUserSecurity(row) {
+  return {
+    ...row,
+    two_factor_enabled: row.two_factor_enabled === true,
+    two_factor_secret: row.two_factor_secret || "",
+    email_confirmation_enabled: row.email_confirmation_enabled === true,
+    email_confirmation_code: row.email_confirmation_code || "",
+    email_confirmation_sent_at: row.email_confirmation_sent_at || null,
+    email_confirmation_expires_at: row.email_confirmation_expires_at || null,
+    email_confirmed_at: row.email_confirmed_at || null,
+    reset_required: row.reset_required === true,
+  };
+}
+
 function mapRoleDataScope(row) {
   return {
     ...row,
@@ -571,30 +603,112 @@ function buildIssueDraftPatchFromClient(client) {
   if (!client) {
     return {};
   }
+  const sourceCustomFields = client.custom_fields_json && typeof client.custom_fields_json === "object"
+    ? client.custom_fields_json
+    : {};
+  const customFields = {};
+  const setCustomField = (fieldKey, fieldValue) => {
+    const key = String(fieldKey || "").trim();
+    const value = String(fieldValue || "").trim();
+    if (!key || !value) {
+      return;
+    }
+    customFields[key] = value;
+  };
+  const setCustomFieldAliases = (keys, fieldValue) => {
+    const value = String(fieldValue || "").trim();
+    if (!value) {
+      return;
+    }
+    keys.forEach((key) => setCustomField(key, value));
+  };
+  const compactTokenKey = (key) => String(key || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
   const recipientName = getClientValue(client, "client_name")
+    || getClientValue(client, "full_name")
     || getClientValue(client, "contact_name")
     || getClientValue(client, "display_name");
   const recipientCompany = getClientValue(client, "company")
-    || getClientValue(client, "employer_name");
-  const recipientDepartment = getClientValue(client, "designation")
-    || getClientValue(client, "department");
-  const email = getClientValue(client, "email") || getClientValue(client, "email_secondary");
-  const phone = getClientValue(client, "phone") || getClientValue(client, "whatsapp");
-  const cnic = getClientValue(client, "cnic");
+    || getClientValue(client, "employer_name")
+    || getClientValue(client, "business_name")
+    || getClientValue(client, "organization");
+  const recipientDepartment = getClientValue(client, "department")
+    || getClientValue(client, "designation")
+    || getClientValue(client, "job_title");
+  const employeeDesignation = getClientValue(client, "designation")
+    || getClientValue(client, "job_title")
+    || recipientDepartment;
+  const employeeDepartmentName = getClientValue(client, "department")
+    || recipientDepartment;
+  const email = getClientValue(client, "email")
+    || getClientValue(client, "email_secondary")
+    || getClientValue(client, "work_email")
+    || getClientValue(client, "company_email");
+  const phone = getClientValue(client, "phone")
+    || getClientValue(client, "mobile")
+    || getClientValue(client, "mobile_no")
+    || getClientValue(client, "whatsapp");
+  const cnic = getClientValue(client, "cnic")
+    || getClientValue(client, "national_id");
   const address = getClientValue(client, "address");
+  const employeeEmpId = getClientValue(client, "employee_id")
+    || getClientValue(client, "emp_id")
+    || getClientValue(client, "staff_id");
+  const employeeJoiningDate = getClientValue(client, "joining_date")
+    || getClientValue(client, "employee_joining_date");
+  const employeeReportingManager = getClientValue(client, "reporting_manager")
+    || getClientValue(client, "manager_name")
+    || getClientValue(client, "line_manager");
+
+  setCustomFieldAliases(["client_name", "clientname"], recipientName);
+  setCustomFieldAliases(["clientfathername", "client_father_name"], getClientValue(client, "father_name") || getClientValue(client, "client_father_name"));
+  setCustomFieldAliases(["client_cnic", "clientcnic"], cnic);
+  setCustomFieldAliases(["client_phone", "clientphone"], phone);
+  setCustomFieldAliases(["client_email", "clientemail"], email);
+  setCustomFieldAliases(["client_address", "clientaddress"], address);
+  setCustomFieldAliases(["clientbankname", "client_bank_name"], getClientValue(client, "bank_name"));
+  setCustomFieldAliases(["clientbankaccount_title", "client_bank_account_title"], getClientValue(client, "account_title"));
+  setCustomFieldAliases(["clientbankaccount", "client_bank_account"], getClientValue(client, "account_number"));
+  setCustomFieldAliases(["clientbankiban", "client_bank_iban"], getClientValue(client, "iban"));
+  setCustomFieldAliases(["clientnomineename", "client_nominee_name"], getClientValue(client, "nominee_name"));
+  setCustomFieldAliases(["clientnomineerelation", "client_nominee_relation"], getClientValue(client, "nominee_relation"));
+  setCustomFieldAliases(["clientnomineecnic", "client_nominee_cnic"], getClientValue(client, "nominee_cnic"));
+  setCustomFieldAliases(["clientnomineephone", "client_nominee_phone"], getClientValue(client, "nominee_phone"));
+  setCustomFieldAliases(["clientnomineeemail", "client_nominee_email"], getClientValue(client, "nominee_email"));
+  setCustomFieldAliases(["clientnomineeaddress", "client_nominee_address"], getClientValue(client, "nominee_address"));
+  setCustomFieldAliases(["effective_date"], getTodayIso());
+
+  Object.entries(sourceCustomFields).forEach(([rawKey, rawValue]) => {
+    const value = String(rawValue || "").trim();
+    if (!value) {
+      return;
+    }
+    const key = String(rawKey || "").trim();
+    if (!key) {
+      return;
+    }
+    setCustomField(key, value);
+    const compact = compactTokenKey(key);
+    if (compact && compact !== key.toLowerCase()) {
+      setCustomField(compact, value);
+    }
+  });
 
   return {
     recipientName,
     recipientCompany,
     recipientDepartment,
-    employeeFullName: recipientName,
+    employeeEmpId,
+    employeeFullName: getClientValue(client, "full_name") || recipientName,
     employeeCnic: cnic,
-    employeeDesignation: recipientDepartment,
-    employeeDepartmentName: recipientDepartment,
+    employeeDesignation,
+    employeeDepartmentName,
     employeePersonalPhone: phone,
     employeeCompanyEmail: email,
     employeeAddress: address,
+    employeeJoiningDate,
+    employeeReportingManager,
+    customFields,
   };
 }
 
@@ -779,7 +893,7 @@ async function ensureDepartmentSequenceSeed(company, department) {
 }
 
 async function fetchBootstrapData() {
-  const [companiesRes, departmentsRes, templateTypesRes, templatesRes, lettersRes, sequencesRes, clientsRes, usersRes, activityRes, reportsRes, rolePermissionsRes, roleDataScopesRes, userPermissionsRes, rolesRes, permissionModulesRes, appSettingsRes] = await Promise.all([
+  const [companiesRes, departmentsRes, templateTypesRes, templatesRes, lettersRes, sequencesRes, clientsRes, usersRes, activityRes, reportsRes, rolePermissionsRes, roleDataScopesRes, userPermissionsRes, userSecurityRes, rolesRes, permissionModulesRes, appSettingsRes] = await Promise.all([
     supabase.from("companies").select("*").order("name", { ascending: true }),
     supabase.from("departments").select("*").order("name", { ascending: true }),
     supabase.from("template_types").select("*").order("name", { ascending: true }),
@@ -798,6 +912,7 @@ async function fetchBootstrapData() {
     supabase.from("role_permissions").select("*"),
     supabase.from("role_data_scopes").select("*"),
     supabase.from("user_permissions").select("*"),
+    supabase.from("user_security").select("*"),
     supabase.from("roles").select("*").order("name", { ascending: true }),
     supabase.from("permission_modules").select("*").order("name", { ascending: true }),
     supabase.from("app_settings").select("*"),
@@ -819,6 +934,9 @@ async function fetchBootstrapData() {
   }
   if (userPermissionsRes.error && !isMissingRelationError(userPermissionsRes.error)) {
     ensureSupabaseSuccess(userPermissionsRes, "User permissions fetch failed");
+  }
+  if (userSecurityRes.error && !isMissingRelationError(userSecurityRes.error)) {
+    ensureSupabaseSuccess(userSecurityRes, "User security fetch failed");
   }
   if (appSettingsRes.error && !isMissingRelationError(appSettingsRes.error)) {
     ensureSupabaseSuccess(appSettingsRes, "App settings fetch failed");
@@ -851,6 +969,7 @@ async function fetchBootstrapData() {
     rolePermissions: (rolePermissionsRes.data || []).map(mapRolePermission),
     roleDataScopes: roleDataScopesRes.error ? [] : (roleDataScopesRes.data || []).map(mapRoleDataScope),
     userPermissions: userPermissionsRes.error ? [] : (userPermissionsRes.data || []).map(mapUserPermission),
+    userSecurity: userSecurityRes.error ? [] : (userSecurityRes.data || []).map(mapUserSecurity),
     roles: rolesRes.error ? [] : (rolesRes.data || []).map(mapRole),
     permissionModules: permissionModulesRes.error ? [] : (permissionModulesRes.data || []).map(mapPermissionModule),
     appSettings: appSettingsRes.error ? [] : (appSettingsRes.data || []).map(mapAppSetting),
@@ -875,6 +994,7 @@ async function fetchBootstrapData() {
     rolePermissions: raw.rolePermissions,
     roleDataScopes: raw.roleDataScopes,
     userPermissions: raw.userPermissions,
+    userSecurity: raw.userSecurity,
     roles: raw.roles,
     permissionModules: raw.permissionModules,
     appSettings,
@@ -995,6 +1115,14 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authChallenge, setAuthChallenge] = useState(null);
+  const [authChallengeCode, setAuthChallengeCode] = useState("");
+  const [authChallengeSubmitting, setAuthChallengeSubmitting] = useState(false);
+  const [pendingAuthUserId, setPendingAuthUserId] = useState("");
+  const [pendingAuthEmail, setPendingAuthEmail] = useState("");
+  const [pendingTwoFactorSecret, setPendingTwoFactorSecret] = useState("");
+  const [pendingTwoFactorOtpUri, setPendingTwoFactorOtpUri] = useState("");
+  const [pendingUserCreation, setPendingUserCreation] = useState(null);
   const [activeClientProfileId, setActiveClientProfileId] = useState("");
   const [clientProfileMode, setClientProfileMode] = useState("view");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -1013,6 +1141,18 @@ export default function App() {
       listener?.subscription?.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (session) {
+      return;
+    }
+    setAuthChallenge(null);
+    setAuthChallengeCode("");
+    setPendingAuthUserId("");
+    setPendingAuthEmail("");
+    setPendingTwoFactorSecret("");
+    setPendingTwoFactorOtpUri("");
+  }, [session]);
 
   async function refreshData() {
     const next = await fetchBootstrapData();
@@ -1158,6 +1298,12 @@ export default function App() {
     const profile = findUserProfileInData(data.users, session?.user, session?.user?.email);
     return profile ? { ...profile, role: normalizeRoleName(profile.role) } : null;
   }, [data.users, session?.user]);
+  const userSecurityByUserId = useMemo(() => {
+    return new Map((data.userSecurity || []).map((row) => [row.user_id, row]));
+  }, [data.userSecurity]);
+  const currentUserSecurity = useMemo(() => {
+    return currentUserProfile?.id ? userSecurityByUserId.get(currentUserProfile.id) || null : null;
+  }, [currentUserProfile?.id, userSecurityByUserId]);
   const roleTableRoles = useMemo(() => {
     return getRoleNamesFromData(data);
   }, [data.roles]);
@@ -1174,6 +1320,8 @@ export default function App() {
       .filter(isValidPermissionModule);
   }, [data.permissionModules, data.roleDataScopes, data.rolePermissions, data.userPermissions]);
   const currentRole = normalizeRoleName(currentUserProfile?.role || "");
+  const twoFactorEnabledGlobal = isTwoFactorGloballyEnabled(data.appSettings);
+  const emailConfirmationEnabledGlobal = isEmailConfirmationGloballyEnabled(data.appSettings);
   const allPermissionsByRole = useMemo(() => {
     return buildRolePermissionMatrix(dynamicRoles, dynamicPermissionModules, data.rolePermissions);
   }, [data.rolePermissions, dynamicPermissionModules, dynamicRoles]);
@@ -1771,7 +1919,14 @@ export default function App() {
       if (Object.prototype.hasOwnProperty.call(patch, "clientId")) {
         const nextClient = data.clients.find((client) => client.id === (patch.clientId || ""));
         if (nextClient) {
-          Object.assign(nextRawDraft, buildIssueDraftPatchFromClient(nextClient));
+          const clientPatch = buildIssueDraftPatchFromClient(nextClient);
+          const mergedCustomFields = {
+            ...(current.customFields || {}),
+            ...(nextRawDraft.customFields || {}),
+            ...(clientPatch.customFields || {}),
+          };
+          Object.assign(nextRawDraft, clientPatch);
+          nextRawDraft.customFields = mergedCustomFields;
         }
       }
 
@@ -2212,6 +2367,355 @@ export default function App() {
     }
   }
 
+  async function saveAppBooleanSetting(key, enabled, successMessage) {
+    const nextValue = !!enabled;
+    const patch = {
+      key,
+      value: nextValue,
+      updated_at: new Date().toISOString(),
+    };
+
+    setData((current) => ({
+      ...current,
+      appSettings: {
+        ...(current.appSettings || {}),
+        [key]: nextValue,
+      },
+    }));
+
+    try {
+      const result = await supabase.from("app_settings").upsert(patch, { onConflict: "key" });
+      ensureSupabaseSuccess(result, "App setting save failed");
+      if (successMessage) {
+        notify(successMessage);
+      }
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`App setting save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function sendEmailConfirmationCodeForUser(user, type = "email_confirmation") {
+    const safeEmail = String(user?.email || "").trim().toLowerCase();
+    if (!user?.id || !safeEmail) {
+      throw new Error("User email not found.");
+    }
+
+    const code = createEmailConfirmationCode();
+    const securityResult = await supabase.from("user_security").upsert({
+      user_id: user.id,
+      ...(userSecurityByUserId.get(user.id) || {}),
+      email_confirmation_enabled: true,
+      email_confirmation_code: code,
+      email_confirmation_sent_at: new Date().toISOString(),
+      email_confirmation_expires_at: toIsoMinutesFromNow(EMAIL_CONFIRMATION_CODE_TTL_MINUTES),
+      email_confirmed_at: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    ensureSupabaseSuccess(securityResult, "User security save failed");
+
+    const { data: payload, error } = await supabase.functions.invoke("send-confirmation-email", {
+      body: {
+        email: safeEmail,
+        code,
+        type,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message || "Email send failed.");
+    }
+    if (!payload?.success) {
+      throw new Error(payload?.error || "Email send failed.");
+    }
+
+    return payload?.data || payload || {};
+  }
+
+  function normalizeManagedUserForm(form = {}) {
+    return {
+      email: String(form?.email || "").trim().toLowerCase(),
+      password: String(form?.password || ""),
+      full_name: String(form?.full_name || "").trim(),
+      requestedRole: normalizeRoleName(form?.role || ""),
+      department_name: String(form?.department_name || "").trim(),
+      active: form?.active !== false,
+    };
+  }
+
+  function validateManagedUserDraft(userDraft, availableRoles = roleTableRoles) {
+    if (!userDraft.email) {
+      return "Email is required.";
+    }
+    if (userDraft.password.length < 6) {
+      return "Password must be at least 6 characters.";
+    }
+    if (!userDraft.requestedRole) {
+      return "Role is required.";
+    }
+    if (!availableRoles.includes(userDraft.requestedRole)) {
+      return "Selected role does not exist in the role table.";
+    }
+    return "";
+  }
+
+  async function finalizeUserCreate(userDraft, options = {}) {
+    const {
+      markEmailConfirmed = false,
+      existingPendingRecord = null,
+    } = options;
+    const { email, password, full_name, requestedRole, department_name, active } = userDraft;
+    const existingUser = (data.users || []).find((user) => String(user.email || "").trim().toLowerCase() === email);
+    const isCurrentSessionUser = String(session?.user?.email || "").trim().toLowerCase() === email;
+    const role = isCurrentSessionUser && existingUser && hasFullAccessRole(existingUser.role)
+      ? FULL_ACCESS_ROLE
+      : requestedRole;
+
+    let authResult = { data: null, error: null };
+    const authClient = createIsolatedAuthClient();
+    authResult = await authClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name,
+          role,
+          department_name,
+        },
+      },
+    });
+    if (authResult.error) {
+      const raw = String(authResult.error.message || "").toLowerCase();
+      if (!raw.includes("already registered") && !raw.includes("already exists")) {
+        throw new Error(`Auth user create failed: ${authResult.error.message}`);
+      }
+    }
+
+    const profilePayload = {
+      email,
+      full_name,
+      role,
+      department_name,
+      active,
+    };
+    const syncedUserResult = existingUser
+      ? { data: existingUser, error: null }
+      : await findUserProfileByEmail(email);
+    ensureSupabaseSuccess(syncedUserResult, "User lookup failed");
+    const savedUser = syncedUserResult.data;
+    const result = savedUser
+      ? await supabase
+        .from("users")
+        .update(profilePayload)
+        .eq("id", savedUser.id)
+        .select("id")
+        .single()
+      : await supabase
+        .from("users")
+        .insert({
+          id: authResult.data?.user?.id || createId(),
+          ...profilePayload,
+        })
+        .select("id")
+        .single();
+    const savedUserRow = ensureSupabaseSuccess(result, "User save failed");
+    const targetUserId = savedUser?.id || savedUserRow?.id || authResult.data?.user?.id || "";
+    const emailConfirmationEnabled = isEmailConfirmationGloballyEnabled(data.appSettings);
+    const securityResult = await supabase.from("user_security").upsert({
+      user_id: targetUserId,
+      ...(userSecurityByUserId.get(targetUserId) || {}),
+      email_confirmation_enabled: emailConfirmationEnabled,
+      email_confirmation_code: markEmailConfirmed ? "" : existingPendingRecord?.code || "",
+      email_confirmation_sent_at: markEmailConfirmed
+        ? (existingPendingRecord?.sentAt || new Date().toISOString())
+        : existingPendingRecord?.sentAt || null,
+      email_confirmation_expires_at: markEmailConfirmed ? null : existingPendingRecord?.expiresAt || null,
+      email_confirmed_at: markEmailConfirmed ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    ensureSupabaseSuccess(securityResult, "User security save failed");
+
+    await refreshData();
+    if (existingUser) {
+      notify("User login repaired and profile updated.");
+    } else {
+      notify("User login and profile added.");
+    }
+    return true;
+  }
+
+  async function requestUserCreateEmailConfirmation(form) {
+    if (!rolePermissions.users.create) {
+      notify("You do not have permission to create users.");
+      return false;
+    }
+
+    const userDraft = normalizeManagedUserForm(form);
+    const validationError = validateManagedUserDraft(userDraft);
+    if (validationError) {
+      notify(validationError);
+      return false;
+    }
+
+    try {
+      const code = createEmailConfirmationCode();
+      await supabase.functions.invoke("send-confirmation-email", {
+        body: {
+          email: userDraft.email,
+          code,
+          type: "email_confirmation",
+        },
+      }).then(({ data: payload, error }) => {
+        if (error) {
+          throw new Error(error.message || "Email send failed.");
+        }
+        if (!payload?.success) {
+          throw new Error(payload?.error || "Email send failed.");
+        }
+      });
+
+      setPendingUserCreation({
+        ...userDraft,
+        code,
+        sentAt: new Date().toISOString(),
+        expiresAt: toIsoMinutesFromNow(EMAIL_CONFIRMATION_CODE_TTL_MINUTES),
+      });
+      notify("Confirmation code sent. Enter the code to create the user.");
+      return true;
+    } catch (error) {
+      notify(`Confirmation send failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function confirmAndCreateUser(form, confirmationCode) {
+    if (!rolePermissions.users.create) {
+      notify("You do not have permission to create users.");
+      return false;
+    }
+
+    const userDraft = normalizeManagedUserForm(form);
+    const validationError = validateManagedUserDraft(userDraft);
+    if (validationError) {
+      notify(validationError);
+      return false;
+    }
+
+    if (!pendingUserCreation || pendingUserCreation.email !== userDraft.email) {
+      notify("Request a confirmation code first.");
+      return false;
+    }
+
+    if (
+      pendingUserCreation.password !== userDraft.password
+      || pendingUserCreation.full_name !== userDraft.full_name
+      || pendingUserCreation.requestedRole !== userDraft.requestedRole
+      || pendingUserCreation.department_name !== userDraft.department_name
+      || pendingUserCreation.active !== userDraft.active
+    ) {
+      notify("User details changed after the code was sent. Send a new confirmation code.");
+      return false;
+    }
+
+    const normalizedCode = normalizeChallengeCode(confirmationCode);
+    if (normalizedCode.length !== 6) {
+      notify("Enter the 6-digit email confirmation code.");
+      return false;
+    }
+
+    const expiresAt = pendingUserCreation.expiresAt ? new Date(pendingUserCreation.expiresAt).getTime() : 0;
+    if (expiresAt && Date.now() > expiresAt) {
+      notify("This confirmation code has expired. Send a new code.");
+      return false;
+    }
+
+    if (pendingUserCreation.code !== normalizedCode) {
+      notify("Invalid confirmation code.");
+      return false;
+    }
+
+    try {
+      const created = await finalizeUserCreate(userDraft, {
+        markEmailConfirmed: true,
+        existingPendingRecord: pendingUserCreation,
+      });
+      if (created) {
+        setPendingUserCreation(null);
+      }
+      return created;
+    } catch (error) {
+      notify(`User save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  function cancelPendingUserCreateConfirmation() {
+    setPendingUserCreation(null);
+  }
+
+  async function upsertCurrentUserSecurity(patch = {}) {
+    if (!currentUserProfile?.id) {
+      throw new Error("Current user profile not found.");
+    }
+
+    const payload = {
+      user_id: currentUserProfile.id,
+      ...(currentUserSecurity || {}),
+      ...patch,
+      updated_at: new Date().toISOString(),
+    };
+    const result = await supabase.from("user_security").upsert(payload, { onConflict: "user_id" }).select("*").single();
+    ensureSupabaseSuccess(result, "User security update failed");
+    return mapUserSecurity(result.data);
+  }
+
+  function finishAuthenticatedAccess(nextData, matchedUser) {
+    setData(nextData);
+    setAuthPassword("");
+    setAuthChallenge(null);
+    setAuthChallengeCode("");
+    setPendingAuthUserId("");
+    setPendingAuthEmail("");
+    setPendingTwoFactorSecret("");
+    setPendingTwoFactorOtpUri("");
+    setActiveView("dashboard");
+    notify(`Signed in as ${normalizeRoleName(matchedUser?.role || currentRole)}`);
+  }
+
+  function prepareTwoFactorSetup(user) {
+    const secret = generateTwoFactorSecret();
+    const otpUri = createOtpAuthUri({
+      issuer: AUTH_ISSUER_NAME,
+      email: user?.email || pendingAuthEmail || session?.user?.email || "",
+      secret,
+    });
+    setPendingTwoFactorSecret(secret);
+    setPendingTwoFactorOtpUri(otpUri);
+    setAuthChallengeCode("");
+    setAuthChallenge("two_factor_setup");
+  }
+
+  function routeAuthenticatedSecurityChallenge(user, securityRow, settings = data.appSettings) {
+    const twoFactorRequired = getEffectiveTwoFactorEnabled(settings, securityRow);
+    if (!twoFactorRequired) {
+      return false;
+    }
+
+    setPendingAuthUserId(user?.id || "");
+    setPendingAuthEmail(user?.email || "");
+    if (securityRow?.reset_required || !String(securityRow?.two_factor_secret || "").trim()) {
+      prepareTwoFactorSetup(user);
+    } else {
+      setPendingTwoFactorSecret("");
+      setPendingTwoFactorOtpUri("");
+      setAuthChallengeCode("");
+      setAuthChallenge("two_factor_verify");
+    }
+    return true;
+  }
+
   async function signIn() {
     if (authSubmitting) {
       return;
@@ -2272,6 +2776,16 @@ export default function App() {
           return;
         }
 
+        const securitySeedResult = await supabase.from("user_security").upsert({
+          user_id: createProfileResult.data?.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        if (securitySeedResult.error) {
+          await supabase.auth.signOut();
+          notify(`Sign in failed: Security profile could not be created (${securitySeedResult.error.message}).`);
+          return;
+        }
+
         profileResult = createProfileResult;
         nextData = await fetchBootstrapData();
       }
@@ -2293,13 +2807,16 @@ export default function App() {
       }
 
       matchedUser = findUserProfileInData(nextData.users, authData?.user, email) || profileResult.data;
+      const securityRow = matchedUser?.id ? (nextData.userSecurity || []).find((row) => row.user_id === matchedUser.id) || null : null;
       await logActivity("LOGIN", "auth", "User signed in", {
         actorId: matchedUser?.id || null,
       });
-      setData(nextData);
-      setAuthPassword("");
-      setActiveView("dashboard");
-      notify(`Signed in as ${normalizeRoleName(matchedUser?.role || profileResult.data.role)}`);
+      if (routeAuthenticatedSecurityChallenge(matchedUser, securityRow, nextData.appSettings)) {
+        setData(nextData);
+        setAuthPassword("");
+        return;
+      }
+      finishAuthenticatedAccess(nextData, matchedUser || profileResult.data);
     } finally {
       setAuthSubmitting(false);
     }
@@ -2318,8 +2835,69 @@ export default function App() {
       setPreviewLetterId(null);
       setEditingLetterId("");
       setActiveClientProfileId("");
+      setAuthChallenge(null);
+      setAuthChallengeCode("");
+      setPendingAuthUserId("");
+      setPendingAuthEmail("");
+      setPendingTwoFactorSecret("");
+      setPendingTwoFactorOtpUri("");
       setAuthPassword("");
       notify("Signed out");
+    }
+  }
+
+  async function submitTwoFactorChallenge() {
+    if (authChallengeSubmitting) {
+      return false;
+    }
+
+    const normalizedCode = normalizeChallengeCode(authChallengeCode);
+    if (normalizedCode.length !== 6) {
+      notify("Enter the 6-digit authenticator code.");
+      return false;
+    }
+
+    setAuthChallengeSubmitting(true);
+    try {
+      if (authChallenge === "two_factor_setup") {
+        if (!pendingTwoFactorSecret) {
+          throw new Error("2FA setup session expired. Start again.");
+        }
+        const isValidSetupCode = await verifyTotpCode(pendingTwoFactorSecret, normalizedCode);
+        if (!isValidSetupCode) {
+          notify("Invalid authenticator code. Scan the QR and try again.");
+          return false;
+        }
+        await upsertCurrentUserSecurity({
+          two_factor_enabled: true,
+          two_factor_secret: pendingTwoFactorSecret,
+          two_factor_verified_at: new Date().toISOString(),
+          reset_required: false,
+        });
+      } else {
+        if (!currentUserSecurity?.two_factor_secret) {
+          throw new Error("2FA secret not found.");
+        }
+        const isValidCode = await verifyTotpCode(currentUserSecurity.two_factor_secret, normalizedCode);
+        if (!isValidCode) {
+          notify("Invalid authenticator code.");
+          return false;
+        }
+        await upsertCurrentUserSecurity({
+          two_factor_verified_at: new Date().toISOString(),
+          reset_required: false,
+        });
+      }
+
+      const nextData = await refreshData();
+      const matchedUser = findUserProfileInData(nextData.users, session?.user, pendingAuthEmail || session?.user?.email);
+      finishAuthenticatedAccess(nextData, matchedUser || currentUserProfile);
+      return true;
+    } catch (error) {
+      notify(`Two-factor verification failed: ${error.message}`);
+      return false;
+    } finally {
+      setAuthChallengeSubmitting(false);
     }
   }
 
@@ -2456,7 +3034,28 @@ export default function App() {
     if (!existing) {
       return false;
     }
-    const normalized = normalizeClientFieldDraft({ ...existing, ...patch, id: existing.id, field_key: existing.field_key });
+    const normalized = normalizeClientFieldDraft({ ...existing, ...patch, id: existing.id });
+    const oldKey = existing.field_key;
+    const nextKey = normalized.field_key;
+    const keyChanged = oldKey !== nextKey;
+
+    if (!nextKey || !normalized.label) {
+      notify("Field key and label are required.");
+      return false;
+    }
+
+    if (keyChanged) {
+      const keyInUse = data.clientFields.some((field) => field.id !== existing.id && field.field_key === nextKey);
+      if (keyInUse) {
+        notify("Field key already exists.");
+        return false;
+      }
+      if (CLIENT_DB_FIELDS.has(oldKey) || CLIENT_DB_FIELDS.has(nextKey)) {
+        notify("Core client column keys cannot be renamed. Create a new custom key instead.");
+        return false;
+      }
+    }
+
     if (existing.is_system && (existing.field_key === "client_name" || existing.field_key === "email")) {
       if (normalized.is_active === false) {
         notify(`${existing.field_key} cannot be deactivated.`);
@@ -2468,9 +3067,48 @@ export default function App() {
       }
     }
     try {
+      const stagedClientCustomRows = [];
+      if (keyChanged) {
+        const hasMeaningfulValue = (value) => {
+          if (value == null) return false;
+          if (typeof value === "string") return Boolean(value.trim());
+          if (Array.isArray(value)) return value.length > 0;
+          if (typeof value === "object") return Object.keys(value).length > 0;
+          return true;
+        };
+        const clientsWithOldKey = (data.clients || []).filter((client) => {
+          const custom = client?.custom_fields_json;
+          return custom && typeof custom === "object" && Object.prototype.hasOwnProperty.call(custom, oldKey);
+        });
+
+        for (const client of clientsWithOldKey) {
+          const currentCustom = client.custom_fields_json && typeof client.custom_fields_json === "object"
+            ? client.custom_fields_json
+            : {};
+          const nextCustom = { ...currentCustom };
+          const oldValue = nextCustom[oldKey];
+          const hasNewKey = Object.prototype.hasOwnProperty.call(nextCustom, nextKey);
+          const shouldUseOldValue = !hasNewKey || !hasMeaningfulValue(nextCustom[nextKey]);
+          if (shouldUseOldValue) {
+            nextCustom[nextKey] = oldValue;
+          }
+
+          const stageResult = await supabase
+            .from("clients")
+            .update({
+              custom_fields_json: nextCustom,
+              updated_by: currentUserProfile?.id || null,
+            })
+            .eq("id", client.id);
+          ensureSupabaseSuccess(stageResult, `Client field key migration stage failed for ${oldKey}`);
+          stagedClientCustomRows.push({ id: client.id, custom_fields_json: nextCustom });
+        }
+      }
+
       const query = supabase
         .from("client_fields")
         .update({
+          field_key: normalized.field_key,
           label: normalized.label,
           input_type: normalized.input_type,
           options_json: normalized.options_json,
@@ -2480,9 +3118,30 @@ export default function App() {
         });
       const result = isUuid(fieldId) ? await query.eq("id", fieldId) : await query.eq("field_key", existing.field_key);
       ensureSupabaseSuccess(result, "Client field update failed");
-      await logActivity("UPDATE_CLIENT_FIELD", "client_fields", `Updated client field ${existing.field_key}`, { entityId: isUuid(fieldId) ? fieldId : null });
+
+      if (keyChanged) {
+        for (const stagedRow of stagedClientCustomRows) {
+          const cleanedCustom = { ...(stagedRow.custom_fields_json || {}) };
+          delete cleanedCustom[oldKey];
+          const cleanupResult = await supabase
+            .from("clients")
+            .update({
+              custom_fields_json: cleanedCustom,
+              updated_by: currentUserProfile?.id || null,
+            })
+            .eq("id", stagedRow.id);
+          ensureSupabaseSuccess(cleanupResult, `Client field key migration cleanup failed for ${oldKey}`);
+        }
+      }
+
+      await logActivity(
+        "UPDATE_CLIENT_FIELD",
+        "client_fields",
+        keyChanged ? `Renamed client field key ${oldKey} -> ${nextKey}` : `Updated client field ${existing.field_key}`,
+        { entityId: isUuid(fieldId) ? fieldId : null },
+      );
       await refreshData();
-      notify("Client field updated");
+      notify(keyChanged ? `Client field key renamed (${oldKey} -> ${nextKey})` : "Client field updated");
       return true;
     } catch (error) {
       notify(`Client field update failed: ${error.message}`);
@@ -2523,94 +3182,22 @@ export default function App() {
       return false;
     }
     try {
-      const email = String(form?.email || "").trim().toLowerCase();
-      const password = String(form?.password || "");
-      const full_name = String(form?.full_name || "").trim();
-      const requestedRole = normalizeRoleName(form?.role || "");
-      const department_name = String(form?.department_name || "").trim();
-      const active = form?.active !== false;
-
-      if (!email) {
-        notify("Email is required.");
-        return false;
-      }
-      if (password.length < 6) {
-        notify("Password must be at least 6 characters.");
-        return false;
-      }
-      if (!requestedRole) {
-        notify("Role is required.");
-        return false;
-      }
-      if (!roleTableRoles.includes(requestedRole)) {
-        notify("Selected role does not exist in the role table.");
+      const emailConfirmationEnabled = isEmailConfirmationGloballyEnabled(data.appSettings);
+      const userDraft = normalizeManagedUserForm(form);
+      const validationError = validateManagedUserDraft(userDraft);
+      if (validationError) {
+        notify(validationError);
         return false;
       }
 
-      const existingUser = (data.users || []).find((user) => String(user.email || "").trim().toLowerCase() === email);
-      const isCurrentSessionUser = String(session?.user?.email || "").trim().toLowerCase() === email;
-      const role = isCurrentSessionUser && existingUser && hasFullAccessRole(existingUser.role)
-        ? FULL_ACCESS_ROLE
-        : requestedRole;
+      if (emailConfirmationEnabled) {
+        notify("Email confirmation is enabled. Send and verify the code before creating the user.");
+        return false;
+      }
 
-      let authResult = { data: null, error: null };
-      const authClient = createIsolatedAuthClient();
-      authResult = await authClient.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name,
-            role,
-            department_name,
-          },
-        },
+      return await finalizeUserCreate(userDraft, {
+        markEmailConfirmed: false,
       });
-      if (authResult.error) {
-        const raw = String(authResult.error.message || "").toLowerCase();
-        if (!raw.includes("already registered") && !raw.includes("already exists")) {
-          notify(`Auth user create failed: ${authResult.error.message}`);
-          return false;
-        }
-      }
-
-      const profilePayload = {
-        email,
-        full_name,
-        role,
-        department_name,
-        active,
-      };
-      const syncedUserResult = existingUser
-        ? { data: existingUser, error: null }
-        : await findUserProfileByEmail(email);
-      ensureSupabaseSuccess(syncedUserResult, "User lookup failed");
-      const savedUser = syncedUserResult.data;
-      const result = savedUser
-        ? await supabase
-          .from("users")
-          .update(profilePayload)
-          .eq("id", savedUser.id)
-          .select("id")
-          .single()
-        : await supabase
-          .from("users")
-          .insert({
-            id: authResult.data?.user?.id || createId(),
-            ...profilePayload,
-          })
-          .select("id")
-          .single();
-      ensureSupabaseSuccess(result, "User save failed");
-      await refreshData();
-      if (existingUser) {
-        notify("User login repaired and profile updated.");
-      } else if (authResult.data?.session) {
-        notify("User login and profile added.");
-      } else {
-        notify("User login and profile added. If email confirmation is enabled, confirm the email before signing in.");
-      }
-      return true;
     } catch (error) {
       notify(`User save failed: ${error.message}`);
       return false;
@@ -3075,6 +3662,260 @@ export default function App() {
     }
   }
 
+  async function verifyUserEmailConfirmation(userId, code) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can verify email confirmation codes.");
+      return false;
+    }
+
+    const targetUser = (data.users || []).find((user) => user.id === userId);
+    if (!targetUser) {
+      notify("User not found.");
+      return false;
+    }
+
+    const security = userSecurityByUserId.get(userId) || null;
+    if (!security?.email_confirmation_enabled) {
+      notify("Email confirmation is not enabled for this user.");
+      return false;
+    }
+
+    const normalizedCode = normalizeChallengeCode(code);
+    if (normalizedCode.length !== 6) {
+      notify("Enter the 6-digit email confirmation code.");
+      return false;
+    }
+
+    const expiresAt = security.email_confirmation_expires_at ? new Date(security.email_confirmation_expires_at).getTime() : 0;
+    if (expiresAt && Date.now() > expiresAt) {
+      notify("This confirmation code has expired. Send a new code.");
+      return false;
+    }
+
+    if (String(security.email_confirmation_code || "") !== normalizedCode) {
+      notify("Invalid confirmation code.");
+      return false;
+    }
+
+    try {
+      const result = await supabase
+        .from("user_security")
+        .upsert(
+          {
+            ...security,
+            user_id: userId,
+            email_confirmed_at: new Date().toISOString(),
+            email_confirmation_code: "",
+            email_confirmation_expires_at: null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        )
+        .select("*")
+        .single();
+      const saved = ensureSupabaseSuccess(result, "Email confirmation verify failed");
+      setData((current) => ({
+        ...current,
+        userSecurity: [
+          ...(current.userSecurity || []).filter((row) => row.user_id !== userId),
+          mapUserSecurity(saved),
+        ],
+      }));
+      notify(`Email confirmed for ${targetUser.email || targetUser.full_name || userId}.`);
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`Email confirmation verify failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function updateTwoFactorGlobalEnabled(enabled) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change 2FA settings.");
+      return false;
+    }
+    return saveAppBooleanSetting(
+      TWO_FACTOR_GLOBAL_SETTING_KEY,
+      enabled,
+      enabled ? "Two-factor authentication enabled globally." : "Two-factor authentication disabled globally.",
+    );
+  }
+
+  async function updateEmailConfirmationGlobalEnabled(enabled) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change email confirmation settings.");
+      return false;
+    }
+    return saveAppBooleanSetting(
+      EMAIL_CONFIRMATION_GLOBAL_SETTING_KEY,
+      enabled,
+      enabled ? "Email confirmation enabled globally." : "Email confirmation disabled globally.",
+    );
+  }
+
+  async function toggleUserTwoFactor(userId, enabled) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change 2FA settings.");
+      return false;
+    }
+
+    const user = (data.users || []).find((row) => row.id === userId);
+    if (!user) {
+      notify("User not found.");
+      return false;
+    }
+
+    const existing = userSecurityByUserId.get(userId) || { user_id: userId };
+    const result = await supabase
+      .from("user_security")
+      .upsert(
+        {
+          ...existing,
+          user_id: userId,
+          two_factor_enabled: !!enabled,
+          reset_required: enabled ? existing.reset_required === true : false,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      )
+      .select("*")
+      .single();
+
+    try {
+      const saved = ensureSupabaseSuccess(result, "2FA save failed");
+      setData((current) => ({
+        ...current,
+        userSecurity: [
+          ...(current.userSecurity || []).filter((row) => row.user_id !== userId),
+          mapUserSecurity(saved),
+        ],
+      }));
+      notify(enabled ? "User 2FA enabled." : "User 2FA disabled.");
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`2FA save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function resetUserTwoFactor(userId) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can reset 2FA.");
+      return false;
+    }
+
+    const user = (data.users || []).find((row) => row.id === userId);
+    if (!user) {
+      notify("User not found.");
+      return false;
+    }
+
+    try {
+      const existing = userSecurityByUserId.get(userId) || { user_id: userId };
+      const result = await supabase
+        .from("user_security")
+        .upsert(
+          {
+            ...existing,
+            user_id: userId,
+            two_factor_enabled: true,
+            two_factor_secret: "",
+            two_factor_verified_at: null,
+            reset_required: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        )
+        .select("*")
+        .single();
+      const saved = ensureSupabaseSuccess(result, "2FA reset failed");
+      setData((current) => ({
+        ...current,
+        userSecurity: [
+          ...(current.userSecurity || []).filter((row) => row.user_id !== userId),
+          mapUserSecurity(saved),
+        ],
+      }));
+      notify("User 2FA reset. The user will scan a new QR on next sign-in.");
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`2FA reset failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function toggleUserEmailConfirmation(userId, enabled) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can change email confirmation settings.");
+      return false;
+    }
+
+    const user = (data.users || []).find((row) => row.id === userId);
+    if (!user) {
+      notify("User not found.");
+      return false;
+    }
+
+    try {
+      const existing = userSecurityByUserId.get(userId) || { user_id: userId };
+      const result = await supabase
+        .from("user_security")
+        .upsert(
+          {
+            ...existing,
+            user_id: userId,
+            email_confirmation_enabled: !!enabled,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        )
+        .select("*")
+        .single();
+      const saved = ensureSupabaseSuccess(result, "Email confirmation save failed");
+      setData((current) => ({
+        ...current,
+        userSecurity: [
+          ...(current.userSecurity || []).filter((row) => row.user_id !== userId),
+          mapUserSecurity(saved),
+        ],
+      }));
+      notify(enabled ? "Email confirmation enabled for user." : "Email confirmation disabled for user.");
+      return true;
+    } catch (error) {
+      await refreshData();
+      notify(`Email confirmation save failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  async function resendUserEmailConfirmation(userId) {
+    if (!hasFullAccessRole(currentRole)) {
+      notify("Only admin can resend email confirmation codes.");
+      return false;
+    }
+
+    const user = (data.users || []).find((row) => row.id === userId);
+    if (!user) {
+      notify("User not found.");
+      return false;
+    }
+
+    try {
+      const delivery = await sendEmailConfirmationCodeForUser(user);
+      await refreshData();
+      if (delivery) {
+        notify("Confirmation code sent.");
+      }
+      return true;
+    } catch (error) {
+      notify(`Confirmation send failed: ${error.message}`);
+      return false;
+    }
+  }
+
   function openClientProfile(clientId) {
     setActiveClientProfileId(clientId);
     setClientProfileMode("view");
@@ -3490,15 +4331,27 @@ export default function App() {
         return (
           <UsersView
             users={data.users}
+            userSecurityByUserId={Object.fromEntries((data.userSecurity || []).map((row) => [row.user_id, row]))}
             roles={roleTableRoles}
             departments={data.departments}
             permissions={rolePermissions.users || { view: false, create: false, edit: false, delete: false }}
             canResetPasswords={hasFullAccessRole(currentRole)}
+            twoFactorEnabledGlobal={twoFactorEnabledGlobal}
+            emailConfirmationEnabledGlobal={emailConfirmationEnabledGlobal}
+            pendingUserCreationEmail={pendingUserCreation?.email || ""}
             onAddUser={addUser}
+            onRequestAddUserEmailConfirmation={requestUserCreateEmailConfirmation}
+            onConfirmAddUserEmailConfirmation={confirmAndCreateUser}
+            onCancelAddUserEmailConfirmation={cancelPendingUserCreateConfirmation}
             onUpdateUser={updateUser}
             onToggleUserActive={toggleUserActive}
             onDeleteUser={deleteUser}
             onResetUserPassword={resetUserPassword}
+            onToggleUserTwoFactor={toggleUserTwoFactor}
+            onResetUserTwoFactor={resetUserTwoFactor}
+            onToggleUserEmailConfirmation={toggleUserEmailConfirmation}
+            onResendUserEmailConfirmation={resendUserEmailConfirmation}
+            onVerifyUserEmailConfirmation={verifyUserEmailConfirmation}
           />
         );
       case "roles":
@@ -3517,11 +4370,15 @@ export default function App() {
             userPermissions={data.userPermissions}
             departments={data.departments.map((department) => department.name).filter(Boolean)}
             activityLoggingEnabled={activityLoggingEnabled}
+            twoFactorEnabledGlobal={twoFactorEnabledGlobal}
+            emailConfirmationEnabledGlobal={emailConfirmationEnabledGlobal}
             canManageAccess={canManageAccess}
             canManageActivityLogging={canManageActivityLogging}
             onSaveRoleAccess={saveRoleAccess}
             onSaveUserPermissionOverrides={saveUserPermissionOverrides}
             onUpdateActivityLoggingEnabled={updateActivityLoggingEnabled}
+            onUpdateTwoFactorGlobalEnabled={updateTwoFactorGlobalEnabled}
+            onUpdateEmailConfirmationGlobalEnabled={updateEmailConfirmationGlobalEnabled}
           />
         );
       default:
@@ -3593,6 +4450,67 @@ export default function App() {
               </label>
               <button className="button button-primary auth-submit" type="submit" disabled={authSubmitting}>
                 {authSubmitting ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (authChallenge) {
+    const qrCodeUrl = pendingTwoFactorOtpUri ? createQrCodeUrl(pendingTwoFactorOtpUri) : "";
+    const isTwoFactorSetup = authChallenge === "two_factor_setup";
+    const isTwoFactorVerify = authChallenge === "two_factor_verify";
+
+    return (
+      <div className="auth-shell">
+        <section className="panel auth-card">
+          <div className="auth-card__brand">
+            <span className="brand-symbol">JZ</span>
+            <div>
+              <p className="eyebrow">Security Check</p>
+              <h3>
+                {isTwoFactorSetup ? "Set Up 2FA" : "Enter Authenticator Code"}
+              </h3>
+              <p>
+                {isTwoFactorSetup
+                  ? "Scan the QR code with Google Authenticator, then enter the 6-digit code to finish pairing."
+                  : "Open Google Authenticator and enter the current 6-digit code."}
+              </p>
+            </div>
+          </div>
+          <div className="auth-card__body">
+            {isTwoFactorSetup && qrCodeUrl ? (
+              <div className="auth-card__summary">
+                <img src={qrCodeUrl} alt="2FA QR code" style={{ width: 220, height: 220, alignSelf: "center" }} />
+                <span>Manual setup key: <strong>{buildRecoveryKeyPreview(pendingTwoFactorSecret)}</strong></span>
+              </div>
+            ) : null}
+            <form
+              className="form-grid auth-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                await submitTwoFactorChallenge();
+              }}
+            >
+              <label>
+                Authenticator code
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={authChallengeCode}
+                  onChange={(event) => setAuthChallengeCode(normalizeChallengeCode(event.target.value))}
+                  placeholder="123456"
+                  maxLength={6}
+                  required
+                />
+              </label>
+              <button className="button button-primary auth-submit" type="submit" disabled={authChallengeSubmitting}>
+                {authChallengeSubmitting ? "Checking..." : isTwoFactorSetup ? "Finish Setup" : "Verify Code"}
+              </button>
+              <button className="button button-secondary" type="button" disabled={authChallengeSubmitting} onClick={signOut}>
+                Cancel
               </button>
             </form>
           </div>

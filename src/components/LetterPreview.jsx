@@ -191,97 +191,6 @@ function hasBodyTextBinding(elements) {
   });
 }
 
-function createAutoBackgroundOverlayElements() {
-  const preset = [
-    {
-      id: "auto-meta",
-      type: "text",
-      text: "Letter No: {{letter_no}}\nDate: {{issue_date}}\nDept: {{department_name}}",
-      x: 64,
-      y: 8,
-      width: 28,
-      height: 12,
-      fontSize: 11,
-      fontWeight: "700",
-      align: "right",
-    },
-    {
-      id: "auto-to",
-      type: "text",
-      text: "To: {{recipient_name}}",
-      x: 8,
-      y: 34,
-      width: 84,
-      height: 5,
-      fontSize: 13,
-      fontWeight: "700",
-      align: "left",
-    },
-    {
-      id: "auto-company",
-      type: "text",
-      text: "Company: {{recipient_company}}",
-      x: 8,
-      y: 39,
-      width: 84,
-      height: 5,
-      fontSize: 12,
-      fontWeight: "400",
-      align: "left",
-    },
-    {
-      id: "auto-body",
-      type: "text",
-      text: "{{body_text}}",
-      x: 8,
-      y: 45,
-      width: 84,
-      height: 32,
-      fontSize: 12,
-      fontWeight: "400",
-      align: "left",
-    },
-    {
-      id: "auto-prepared",
-      type: "text",
-      text: "Prepared By\n{{prepared_by}}",
-      x: 8,
-      y: 82,
-      width: 36,
-      height: 8,
-      fontSize: 12,
-      fontWeight: "700",
-      align: "left",
-    },
-    {
-      id: "auto-approved",
-      type: "text",
-      text: "Approved By\n{{approved_by}}",
-      x: 56,
-      y: 82,
-      width: 36,
-      height: 8,
-      fontSize: 12,
-      fontWeight: "700",
-      align: "left",
-    },
-  ];
-
-  return preset.map((item, index) => ({
-    ...item,
-    zIndex: index,
-    color: "#1e2321",
-    borderColor: "transparent",
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    textDecoration: "none",
-    opacity: 100,
-    paddingX: 6,
-    paddingY: 4,
-    lineHeight: 1.35,
-    letterSpacing: 0,
-  }));
-}
 export default function LetterPreview({ preview }) {
   const stageRef = useRef(null);
   const [sheetScale, setSheetScale] = useState(1);
@@ -325,8 +234,23 @@ export default function LetterPreview({ preview }) {
   const sourceCanvasElements = [...design.canvas.elements].sort((left, right) => left.zIndex - right.zIndex);
   const valueMap = buildLetterValueMap({ company, department, template, values });
   const isBackgroundMode = design.renderMode === "background" || Boolean(design.backgroundImage.dataUrl);
-  const canvasElements = isBackgroundMode && !sourceCanvasElements.length ? createAutoBackgroundOverlayElements() : sourceCanvasElements;
+  const useStructuredShell = !isBackgroundMode && design.showStructuredShell !== false;
+  const canvasElements = sourceCanvasElements;
   const hasBodyBinding = hasBodyTextBinding(canvasElements);
+  const shouldRenderBodyFallback = (isBackgroundMode || !useStructuredShell) && !hasBodyBinding;
+  const bodyFallbackBounds = isBackgroundMode
+    ? {
+      left: "8%",
+      top: "45%",
+      width: "84%",
+      height: "32%",
+    }
+    : {
+      left: "8%",
+      top: "8%",
+      width: "84%",
+      height: "84%",
+    };
 
   const body = valueMap.body_text;
   const paragraphs = body
@@ -407,14 +331,11 @@ export default function LetterPreview({ preview }) {
                 {canvasElements
                   .filter((element) => Number(element.pageIndex || 0) === pageIndex)
                   .map((element) => renderCanvasElement(element, valueMap))}
-                {isBackgroundMode && !hasBodyBinding ? (
+                {shouldRenderBodyFallback ? (
                   <div
                     className="preview-canvas-element preview-canvas-element--text preview-canvas-element--body-fallback"
                     style={{
-                      left: "8%",
-                      top: "45%",
-                      width: "84%",
-                      height: "32%",
+                      ...bodyFallbackBounds,
                       zIndex: 999,
                       color: "#1e2321",
                       borderColor: "transparent",
@@ -432,7 +353,7 @@ export default function LetterPreview({ preview }) {
               </div>
             </div>
 
-            {isBackgroundMode ? null : (
+            {useStructuredShell ? (
               <>
           {design.showDecorativeHeader ? <div className="letter-decor" aria-hidden="true" /> : null}
           {design.showDecorativeHeader && design.layout !== "classic" ? <div className="letter-decor letter-decor--secondary" aria-hidden="true" /> : null}
@@ -482,7 +403,7 @@ export default function LetterPreview({ preview }) {
           ) : (
             <section className="letter-recipient">
               <div>
-                <strong>To:</strong> {values.recipientName || "Recipient name"}
+                <strong>To:</strong> {values.recipientName || ""}
               </div>
               {values.recipientCompany ? (
                 <div>
@@ -529,7 +450,7 @@ export default function LetterPreview({ preview }) {
             ) : null}
           </footer>
               </>
-            )}
+            ) : null}
           </div>
         ))}
       </div>
