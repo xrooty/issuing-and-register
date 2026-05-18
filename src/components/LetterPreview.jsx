@@ -9,6 +9,8 @@ import {
 
 const A4_BASE_WIDTH_PX = 794;
 const A4_BASE_HEIGHT_PX = 1123;
+const LEGAL_BASE_WIDTH_PX = 816;
+const LEGAL_BASE_HEIGHT_PX = 1344;
 
 function getLineStrokeWidth(element) {
   const explicitWidth = Number(element?.borderWidth);
@@ -189,100 +191,13 @@ function hasBodyTextBinding(elements) {
   });
 }
 
-function createAutoBackgroundOverlayElements() {
-  const preset = [
-    {
-      id: "auto-meta",
-      type: "text",
-      text: "Letter No: {{letter_no}}\nDate: {{issue_date}}\nDept: {{department_name}}",
-      x: 64,
-      y: 8,
-      width: 28,
-      height: 12,
-      fontSize: 11,
-      fontWeight: "700",
-      align: "right",
-    },
-    {
-      id: "auto-to",
-      type: "text",
-      text: "To: {{recipient_name}}",
-      x: 8,
-      y: 34,
-      width: 84,
-      height: 5,
-      fontSize: 13,
-      fontWeight: "700",
-      align: "left",
-    },
-    {
-      id: "auto-company",
-      type: "text",
-      text: "Company: {{recipient_company}}",
-      x: 8,
-      y: 39,
-      width: 84,
-      height: 5,
-      fontSize: 12,
-      fontWeight: "400",
-      align: "left",
-    },
-    {
-      id: "auto-body",
-      type: "text",
-      text: "{{body_text}}",
-      x: 8,
-      y: 45,
-      width: 84,
-      height: 32,
-      fontSize: 12,
-      fontWeight: "400",
-      align: "left",
-    },
-    {
-      id: "auto-prepared",
-      type: "text",
-      text: "Prepared By\n{{prepared_by}}",
-      x: 8,
-      y: 82,
-      width: 36,
-      height: 8,
-      fontSize: 12,
-      fontWeight: "700",
-      align: "left",
-    },
-    {
-      id: "auto-approved",
-      type: "text",
-      text: "Approved By\n{{approved_by}}",
-      x: 56,
-      y: 82,
-      width: 36,
-      height: 8,
-      fontSize: 12,
-      fontWeight: "700",
-      align: "left",
-    },
-  ];
-
-  return preset.map((item, index) => ({
-    ...item,
-    zIndex: index,
-    color: "#1e2321",
-    borderColor: "transparent",
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    textDecoration: "none",
-    opacity: 100,
-    paddingX: 6,
-    paddingY: 4,
-    lineHeight: 1.35,
-    letterSpacing: 0,
-  }));
-}
 export default function LetterPreview({ preview }) {
   const stageRef = useRef(null);
   const [sheetScale, setSheetScale] = useState(1);
+  const previewDesign = preview ? normalizeTemplateDesign(preview.template.design) : null;
+  const isLegalPage = String(previewDesign?.pageSize || "A4").toUpperCase() === "LEGAL";
+  const pageBaseWidth = isLegalPage ? LEGAL_BASE_WIDTH_PX : A4_BASE_WIDTH_PX;
+  const pageBaseHeight = isLegalPage ? LEGAL_BASE_HEIGHT_PX : A4_BASE_HEIGHT_PX;
 
   useEffect(() => {
     const node = stageRef.current;
@@ -292,7 +207,7 @@ export default function LetterPreview({ preview }) {
 
     const updateScale = () => {
       const availableWidth = Math.max(120, Number(node.clientWidth || 0));
-      const nextScale = Math.min(1, availableWidth / A4_BASE_WIDTH_PX);
+      const nextScale = Math.min(1, availableWidth / pageBaseWidth);
       setSheetScale(Number.isFinite(nextScale) ? nextScale : 1);
     };
 
@@ -306,19 +221,36 @@ export default function LetterPreview({ preview }) {
     const observer = new ResizeObserver(() => updateScale());
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [pageBaseWidth]);
 
   if (!preview) {
     return <EmptyState title="Preview unavailable" message="Select a company, department, and template to build the letter." />;
   }
 
   const { company, department, template, values } = preview;
-  const design = normalizeTemplateDesign(template.design);
+  const design = previewDesign;
+  const totalPages = Math.max(1, Number(design.additionalPages || 1));
+  const pageIndexes = Array.from({ length: totalPages }, (_, index) => index);
   const sourceCanvasElements = [...design.canvas.elements].sort((left, right) => left.zIndex - right.zIndex);
   const valueMap = buildLetterValueMap({ company, department, template, values });
   const isBackgroundMode = design.renderMode === "background" || Boolean(design.backgroundImage.dataUrl);
-  const canvasElements = isBackgroundMode && !sourceCanvasElements.length ? createAutoBackgroundOverlayElements() : sourceCanvasElements;
+  const useStructuredShell = !isBackgroundMode && design.showStructuredShell !== false;
+  const canvasElements = sourceCanvasElements;
   const hasBodyBinding = hasBodyTextBinding(canvasElements);
+  const shouldRenderBodyFallback = (isBackgroundMode || !useStructuredShell) && !hasBodyBinding;
+  const bodyFallbackBounds = isBackgroundMode
+    ? {
+      left: "8%",
+      top: "45%",
+      width: "84%",
+      height: "32%",
+    }
+    : {
+      left: "8%",
+      top: "8%",
+      width: "84%",
+      height: "84%",
+    };
 
   const body = valueMap.body_text;
   const paragraphs = body
@@ -353,59 +285,76 @@ export default function LetterPreview({ preview }) {
     <div
       ref={stageRef}
       className="letter-sheet-stage"
-      style={{ height: `${Math.round(A4_BASE_HEIGHT_PX * sheetScale)}px` }}
+      style={{
+        "--preview-page-width-print": isLegalPage ? "216mm" : "210mm",
+        "--preview-page-height-print": isLegalPage ? "356mm" : "297mm",
+        height: `${Math.round((pageBaseHeight * totalPages + Math.max(0, totalPages - 1) * 24) * sheetScale)}px`,
+        maxWidth: `${pageBaseWidth}px`,
+      }}
     >
       <div
-        className={`letter-sheet letter-sheet--${design.layout} ${isBackgroundMode ? "letter-sheet--background-mode" : ""}`}
         style={{
-          "--template-accent": design.accentColor,
-          "--template-secondary": design.secondaryColor,
+          display: "grid",
+          gap: 24,
+          width: `${pageBaseWidth}px`,
           transform: `scale(${sheetScale})`,
           transformOrigin: "top left",
         }}
       >
-      {design.backgroundImage.dataUrl ? (
-        <img
-          className="letter-background"
-          src={design.backgroundImage.dataUrl}
-          alt="Letterhead background"
-          style={{
-            objectFit: design.backgroundImage.fit,
-            opacity: design.backgroundImage.opacity / 100,
-          }}
-        />
-      ) : null}
+        {pageIndexes.map((pageIndex) => (
+          <div
+            key={`preview-page-${pageIndex + 1}`}
+            className={`letter-sheet letter-sheet--${design.layout} ${isBackgroundMode ? "letter-sheet--background-mode" : ""}`}
+            style={{
+              "--template-accent": design.accentColor,
+              "--template-secondary": design.secondaryColor,
+              width: `${pageBaseWidth}px`,
+              minWidth: `${pageBaseWidth}px`,
+              minHeight: `${pageBaseHeight}px`,
+              aspectRatio: `${pageBaseWidth} / ${pageBaseHeight}`,
+            }}
+          >
+            {design.backgroundImage.dataUrl ? (
+              <img
+                className="letter-background"
+                src={design.backgroundImage.dataUrl}
+                alt="Letterhead background"
+                style={{
+                  objectFit: design.backgroundImage.fit,
+                  opacity: design.backgroundImage.opacity / 100,
+                }}
+              />
+            ) : null}
 
-      <div className="preview-canvas-layer" aria-hidden="true">
-        <div className="preview-canvas-content-layer" style={contentLayerStyle}>
-          {canvasElements.map((element) => renderCanvasElement(element, valueMap))}
-          {isBackgroundMode && !hasBodyBinding ? (
-            <div
-              className="preview-canvas-element preview-canvas-element--text preview-canvas-element--body-fallback"
-              style={{
-                left: "8%",
-                top: "45%",
-                width: "84%",
-                height: "32%",
-                zIndex: 999,
-                color: "#1e2321",
-                borderColor: "transparent",
-                borderWidth: "0px",
-                fontSize: "12px",
-                fontWeight: "400",
-                textAlign: "left",
-                opacity: 1,
-                backgroundColor: "transparent",
-              }}
-            >
-              {renderMarkdownBlocks(valueMap.body_text || "Template body will appear here.", "body-fallback")}
+            <div className="preview-canvas-layer" aria-hidden="true">
+              <div className="preview-canvas-content-layer" style={contentLayerStyle}>
+                {canvasElements
+                  .filter((element) => Number(element.pageIndex || 0) === pageIndex)
+                  .map((element) => renderCanvasElement(element, valueMap))}
+                {shouldRenderBodyFallback ? (
+                  <div
+                    className="preview-canvas-element preview-canvas-element--text preview-canvas-element--body-fallback"
+                    style={{
+                      ...bodyFallbackBounds,
+                      zIndex: 999,
+                      color: "#1e2321",
+                      borderColor: "transparent",
+                      borderWidth: "0px",
+                      fontSize: "12px",
+                      fontWeight: "400",
+                      textAlign: "left",
+                      opacity: 1,
+                      backgroundColor: "transparent",
+                    }}
+                  >
+                    {renderMarkdownBlocks(valueMap.body_text || "Template body will appear here.", `body-fallback-${pageIndex}`)}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          ) : null}
-        </div>
-      </div>
 
-      {isBackgroundMode ? null : (
-        <>
+            {useStructuredShell ? (
+              <>
           {design.showDecorativeHeader ? <div className="letter-decor" aria-hidden="true" /> : null}
           {design.showDecorativeHeader && design.layout !== "classic" ? <div className="letter-decor letter-decor--secondary" aria-hidden="true" /> : null}
 
@@ -454,7 +403,7 @@ export default function LetterPreview({ preview }) {
           ) : (
             <section className="letter-recipient">
               <div>
-                <strong>To:</strong> {values.recipientName || "Recipient name"}
+                <strong>To:</strong> {values.recipientName || ""}
               </div>
               {values.recipientCompany ? (
                 <div>
@@ -500,8 +449,10 @@ export default function LetterPreview({ preview }) {
               </p>
             ) : null}
           </footer>
-        </>
-      )}
+              </>
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   );

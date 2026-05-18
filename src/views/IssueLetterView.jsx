@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import LetterPreview from "../components/LetterPreview";
 import {
   DEFAULT_REFERENCE_PATTERN,
+  ISSUE_LETTER_TYPE_OPTIONS,
+  formatDate,
+  getRegisterNumberLabel,
   getTemplateDynamicTokenFields,
   normalizeTemplateCustomFields,
+  templateMatchesIssueLetterType,
   resolveReferencePattern,
 } from "../utils/lettering";
 
@@ -11,27 +15,74 @@ export default function IssueLetterView({
   companies,
   departments,
   templates,
+  clients = [],
+  clientFields = [],
+  letters = [],
   draft,
   preview,
   onDraftChange,
   onIssueLetter,
   onPrint,
   onEditTemplate,
-  onSearchEmployees,
   isEditingLetter,
   onCancelEditLetter,
 }) {
-  const [employeeQuery, setEmployeeQuery] = useState("");
-  const [employeeResults, setEmployeeResults] = useState([]);
-  const [employeeLookupBusy, setEmployeeLookupBusy] = useState(false);
-  const [employeeLookupError, setEmployeeLookupError] = useState("");
+  function getClientSearchLabel(client) {
+    return `${client.client_name || client.contact_name || client.company || client.email}`;
+  }
+
+  function getClientSearchText(client) {
+    return [
+      client.client_name,
+      client.full_name,
+      client.contact_name,
+      client.company,
+      client.email,
+      client.email_secondary,
+      client.phone,
+    ].filter(Boolean).join(" ").toLowerCase();
+  }
+
+  function getLetterType(letter) {
+    const template = templates.find((item) => item.id === letter.templateId);
+    const typeText = String(
+      template?.type
+      || template?.name
+      || letter?.templateSnapshot?.type
+      || letter?.legacyTemplateType
+      || letter?.subject
+      || "",
+    ).toLowerCase();
+    return typeText.includes("ag") || typeText.includes("agreement") || typeText.includes("legal") ? "AG" : "LETTER";
+  }
+
   const selectedCompany = companies.find((company) => company.id === draft.companyId) || null;
   const departmentOptions = departments.filter((department) => department.companyId === draft.companyId);
   const selectedDepartment = departmentOptions.find((department) => department.id === draft.departmentId) || null;
   const templateOptions = templates.filter(
     (template) => template.companyId === draft.companyId && template.departmentId === draft.departmentId,
-  );
+  ).filter((template) => templateMatchesIssueLetterType(template, draft.letterType));
   const selectedTemplate = templateOptions.find((template) => template.id === draft.templateId) || null;
+  const selectedTemplateTypeName = String(selectedTemplate?.type || selectedTemplate?.name || draft.letterType || "").trim();
+  const manualNumberLabel = getRegisterNumberLabel(selectedTemplateTypeName || "Letter");
+  const selectedClient = clients.find((client) => {
+    if (client.id === (draft.clientId || "")) {
+      return true;
+    }
+    const recipientName = String(draft.recipientName || draft.employeeFullName || "").trim().toLowerCase();
+    const recipientCompany = String(draft.recipientCompany || "").trim().toLowerCase();
+    const clientName = String(client.client_name || client.full_name || client.contact_name || "").trim().toLowerCase();
+    const clientCompany = String(client.company || "").trim().toLowerCase();
+    return (!draft.clientId && recipientName && clientName === recipientName)
+      || (!draft.clientId && recipientCompany && clientCompany === recipientCompany);
+  }) || null;
+  const selectedClientSearchText = selectedClient
+    ? getClientSearchLabel(selectedClient)
+    : "";
+  const [clientSearchQuery, setClientSearchQuery] = useState(selectedClientSearchText);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [selectedRelatedLetterId, setSelectedRelatedLetterId] = useState("");
+  const generateClickRequestedRef = useRef(false);
   const customFieldDefinitions = normalizeTemplateCustomFields(selectedTemplate?.design?.customFields || []);
   const dynamicTokenFields = getTemplateDynamicTokenFields(selectedTemplate);
   const previewReferenceNo = preview?.values?.letterNo || "";
@@ -67,54 +118,143 @@ export default function IssueLetterView({
     });
   }
 
-  async function searchEmployeeRecords() {
-    if (!onSearchEmployees) {
-      setEmployeeLookupError("Employee search is not configured.");
-      return;
-    }
+  function selectClient(client) {
+    setClientSearchQuery(client ? getClientSearchLabel(client) : "");
+    setShowClientSuggestions(false);
+    setSelectedRelatedLetterId("");
+    updateField("clientId", client?.id || "");
+  }
 
-    const query = String(employeeQuery || "").trim();
+  function searchClient() {
+    const query = clientSearchQuery.trim().toLowerCase();
     if (!query) {
-      setEmployeeLookupError("Enter employee ID, name, or CNIC to search.");
-      setEmployeeResults([]);
+      selectClient(null);
       return;
     }
-
-    setEmployeeLookupBusy(true);
-    setEmployeeLookupError("");
-
-    try {
-      const rows = await onSearchEmployees(query);
-      setEmployeeResults(rows);
-      if (!rows.length) {
-        setEmployeeLookupError("No employee found for this search.");
-      }
-    } catch (error) {
-      setEmployeeResults([]);
-      setEmployeeLookupError(error?.message || "Employee lookup failed.");
-    } finally {
-      setEmployeeLookupBusy(false);
+    const match = clients.find((client) => getClientSearchText(client).includes(query));
+    if (match) {
+      selectClient(match);
     }
   }
 
-  function applyEmployeeToDraft(employee) {
-    const address = employee.currentAddress || employee.permanentAddress || "";
+  function handleIssueSubmit(event) {
+    event.preventDefault();
+  }
+
+  function handleGenerateLetterClick(event) {
+    if (!generateClickRequestedRef.current) {
+      return;
+    }
+    generateClickRequestedRef.current = false;
+
+    const form = event.currentTarget.form;
+    if (form && !form.reportValidity()) {
+      return;
+    }
+
+    onIssueLetter();
+  }
+
+  useEffect(() => {
+    setClientSearchQuery(selectedClientSearchText);
+  }, [selectedClientSearchText]);
+
+  useEffect(() => {
+    setSelectedRelatedLetterId("");
+  }, [draft.clientId]);
+
+  const clientSuggestions = useMemo(() => {
+    const query = clientSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+    return clients
+      .filter((client) => getClientSearchText(client).includes(query))
+      .slice(0, 5);
+  }, [clients, clientSearchQuery]);
+
+  const selectedClientLetters = useMemo(() => {
+    if (!selectedClient) {
+      return [];
+    }
+
+    const clientName = String(selectedClient.client_name || selectedClient.full_name || selectedClient.contact_name || "").trim().toLowerCase();
+    const clientEmail = String(selectedClient.email || "").trim().toLowerCase();
+    const clientCompany = String(selectedClient.company || "").trim().toLowerCase();
+
+    return (letters || [])
+      .filter((letter) => {
+        if (letter.clientId === selectedClient.id) {
+          return true;
+        }
+        const legacyName = String(letter.legacyClientName || letter.recipientName || "").trim().toLowerCase();
+        const legacyEmail = String(letter.legacyClientEmail || "").trim().toLowerCase();
+        const legacyCompany = String(letter.legacyClientCompany || letter.recipientCompany || "").trim().toLowerCase();
+        return (clientEmail && legacyEmail === clientEmail)
+          || (clientName && legacyName === clientName)
+          || (clientCompany && legacyCompany === clientCompany);
+      })
+      .map((letter) => ({
+        ...letter,
+        issueRecordType: getLetterType(letter),
+      }))
+      .sort((a, b) => new Date(b.createdAt || b.issueDate || 0).getTime() - new Date(a.createdAt || a.issueDate || 0).getTime());
+  }, [letters, selectedClient, templates]);
+
+  const selectedRelatedLetter = selectedClientLetters.find((letter) => letter.id === selectedRelatedLetterId) || null;
+  const selectedAgRecord = selectedRelatedLetter?.issueRecordType === "AG" ? selectedRelatedLetter : null;
+  const selectedClientLetterCount = selectedClientLetters.filter((letter) => letter.issueRecordType === "LETTER").length;
+  const selectedClientAgCount = selectedClientLetters.filter((letter) => letter.issueRecordType === "AG").length;
+
+  function applySelectedAgData() {
+    if (!selectedAgRecord) {
+      return;
+    }
+
+    const agNo = selectedAgRecord.letterNo || "";
+    const agDate = selectedAgRecord.issueDate || "";
+    const nextCustomFields = {
+      ...(draft.customFields || {}),
+      ag_number: agNo,
+      ag_no: agNo,
+      agreement_number: agNo,
+      agreement_no: agNo,
+      ag_issue_date: agDate,
+      agreement_date: agDate,
+    };
 
     onDraftChange({
-      recipientName: employee.fullName || draft.recipientName || "",
-      recipientDepartment: employee.departmentName || draft.recipientDepartment || "",
-      employeeEmpId: employee.empId || "",
-      employeeFullName: employee.fullName || "",
-      employeeCnic: employee.cnic || "",
-      employeeDesignation: employee.designation || "",
-      employeeDepartmentName: employee.departmentName || "",
-      employeePersonalPhone: employee.personalPhone || "",
-      employeeCompanyEmail: employee.companyEmail || "",
-      employeeAddress: address,
-      employeeJoiningDate: employee.joiningDate || "",
-      employeeReportingManager: employee.reportingManager || "",
+      clientId: selectedClient?.id || draft.clientId || "",
+      recipientName: draft.recipientName || selectedAgRecord.recipientName || "",
+      recipientCompany: draft.recipientCompany || selectedAgRecord.recipientCompany || "",
+      recipientDepartment: draft.recipientDepartment || selectedAgRecord.recipientDepartment || "",
+      employeeEmpId: draft.employeeEmpId || selectedAgRecord.templateSnapshot?.employeeData?.empId || "",
+      employeeFullName: draft.employeeFullName || selectedAgRecord.templateSnapshot?.employeeData?.fullName || selectedAgRecord.recipientName || "",
+      employeeCnic: draft.employeeCnic || selectedAgRecord.templateSnapshot?.employeeData?.cnic || "",
+      employeeDesignation: draft.employeeDesignation || selectedAgRecord.templateSnapshot?.employeeData?.designation || "",
+      employeeDepartmentName: draft.employeeDepartmentName || selectedAgRecord.templateSnapshot?.employeeData?.departmentName || selectedAgRecord.recipientDepartment || "",
+      employeePersonalPhone: draft.employeePersonalPhone || selectedAgRecord.templateSnapshot?.employeeData?.personalPhone || "",
+      employeeCompanyEmail: draft.employeeCompanyEmail || selectedAgRecord.templateSnapshot?.employeeData?.companyEmail || "",
+      employeeAddress: draft.employeeAddress || selectedAgRecord.templateSnapshot?.employeeData?.address || "",
+      employeeJoiningDate: draft.employeeJoiningDate || selectedAgRecord.templateSnapshot?.employeeData?.joiningDate || "",
+      employeeReportingManager: draft.employeeReportingManager || selectedAgRecord.templateSnapshot?.employeeData?.reportingManager || "",
+      customFields: nextCustomFields,
     });
   }
+
+  const selectedClientEntries = selectedClient
+    ? clientFields
+      .filter((field) => field.is_active)
+      .map((field) => {
+        const rawValue = selectedClient[field.field_key] ?? selectedClient.custom_fields_json?.[field.field_key];
+        return {
+          key: field.field_key,
+          label: field.label || field.field_key,
+          value: rawValue == null ? "" : String(rawValue).trim(),
+        };
+      })
+      .filter((item) => item.value)
+    : [];
 
   return (
     <section className="view is-active">
@@ -136,10 +276,7 @@ export default function IssueLetterView({
 
           <form
             className="form-grid"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onIssueLetter();
-            }}
+            onSubmit={handleIssueSubmit}
           >
             <label>
               Company
@@ -174,6 +311,19 @@ export default function IssueLetterView({
               </select>
             </label>
             <label className="span-2">
+              Letter Type
+              <select
+                required
+                value={draft.letterType || "LETTER"}
+                onChange={(event) => updateField("letterType", event.target.value)}
+                disabled={!selectedCompany || !selectedDepartment}
+              >
+                {ISSUE_LETTER_TYPE_OPTIONS.map((type) => (
+                  <option key={type.value} value={type.value}>{type.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="span-2">
               Template
               <select
                 required
@@ -181,7 +331,7 @@ export default function IssueLetterView({
                 onChange={(event) => updateField("templateId", event.target.value)}
                 disabled={!hasTemplateOptions}
               >
-                <option value="">{hasTemplateOptions ? "Select template" : "No templates available"}</option>
+                <option value="">{hasTemplateOptions ? "Select template" : `No ${draft.letterType === "AG" ? "AG" : "Letter"} templates available`}</option>
                 {templateOptions.map((template) => (
                   <option key={template.id} value={template.id}>
                     {template.name} ({template.type})
@@ -189,59 +339,161 @@ export default function IssueLetterView({
                 ))}
               </select>
             </label>
+            <div className="span-2 form-field">
+              <span>Client Profile (optional)</span>
+              <div className="client-search-control">
+                <input
+                  value={clientSearchQuery}
+                  onChange={(event) => {
+                    const text = String(event.target.value || "");
+                    setClientSearchQuery(text);
+                    setShowClientSuggestions(true);
+                    if (!text.trim()) {
+                      updateField("clientId", "");
+                    }
+                  }}
+                  onFocus={() => setShowClientSuggestions(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      searchClient();
+                    }
+                    if (event.key === "Escape") {
+                      setShowClientSuggestions(false);
+                    }
+                  }}
+                  placeholder="Search client by name / email"
+                />
+                <button className="button button-secondary" type="button" onClick={searchClient}>
+                  Search
+                </button>
+                {showClientSuggestions && clientSuggestions.length ? (
+                  <div className="client-search-suggestions" role="listbox">
+                    {clientSuggestions.map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        className="client-search-suggestion"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectClient(client)}
+                      >
+                        <strong>{getClientSearchLabel(client)}</strong>
+                        <span>{[client.email, client.phone, client.company].filter(Boolean).join(" / ") || "Client profile"}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {selectedClient ? (
+              <div className="span-2 design-settings issue-client-profile">
+                <div className="design-settings__header issue-client-profile__header">
+                  <div>
+                    <p className="eyebrow">Client Profile</p>
+                    <h3>{selectedClient.client_name || selectedClient.full_name || selectedClient.company || "Selected client"}</h3>
+                    <p>{[selectedClient.email, selectedClient.phone, selectedClient.company].filter(Boolean).join(" / ") || "Client selected"}</p>
+                  </div>
+                  <div className="issue-client-profile__stats">
+                    <span><strong>{selectedClientLetters.length}</strong> Total</span>
+                    <span><strong>{selectedClientLetterCount}</strong> Letters</span>
+                    <span><strong>{selectedClientAgCount}</strong> AG</span>
+                  </div>
+                </div>
+                <div className="issue-client-profile__section">
+                  <div className="issue-client-profile__section-heading">
+                    <h4>Profile data</h4>
+                    <span>Saved client fields</span>
+                  </div>
+                  {selectedClientEntries.length ? (
+                    <div className="issue-client-profile__grid">
+                      {selectedClientEntries.map((entry) => (
+                        <div key={entry.key} className="issue-client-profile__item">
+                          <span>{entry.label}</span>
+                          <strong>{entry.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="helper-note" style={{ marginTop: 0 }}>No profile fields available for this client.</p>
+                  )}
+                </div>
+                <div className="issue-client-profile__section issue-client-history">
+                  <div className="issue-client-profile__section-heading">
+                    <h4>Letter / AG history</h4>
+                    <span>Select an AG to reuse its number and issue date</span>
+                  </div>
+                  {selectedClientLetters.length ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Type</th>
+                            <th>Letter No</th>
+                            <th>AG No</th>
+                            <th>Subject</th>
+                            <th>Issue Date</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedClientLetters.map((letter) => (
+                            <tr key={letter.id} className={selectedRelatedLetterId === letter.id ? "is-selected-row" : ""}>
+                              <td>{letter.issueRecordType}</td>
+                              <td>{letter.issueRecordType === "LETTER" ? letter.letterNo : "-"}</td>
+                              <td>{letter.issueRecordType === "AG" ? letter.letterNo : "-"}</td>
+                              <td>{letter.subject || "-"}</td>
+                              <td>{formatDate(letter.issueDate || letter.createdAt)}</td>
+                              <td>
+                                <button className="button button-secondary" type="button" onClick={() => setSelectedRelatedLetterId(letter.id)}>
+                                  Select
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="helper-note" style={{ marginTop: 0 }}>No letter or AG records found for this client.</p>
+                  )}
+                </div>
+                {selectedAgRecord ? (
+                  <div className="issue-client-profile__section issue-ag-detail">
+                    <div className="issue-client-profile__section-heading">
+                      <div>
+                      <p className="eyebrow">Selected AG</p>
+                      <h4>{selectedAgRecord.letterNo || "AG record"}</h4>
+                      </div>
+                      <span>Ready to reuse</span>
+                    </div>
+                    <div className="issue-client-profile__grid">
+                      <div className="issue-client-profile__item"><span>AG Number</span><strong>{selectedAgRecord.letterNo || "-"}</strong></div>
+                      <div className="issue-client-profile__item"><span>Issue Date</span><strong>{formatDate(selectedAgRecord.issueDate || selectedAgRecord.createdAt)}</strong></div>
+                      <div className="issue-client-profile__item"><span>Subject</span><strong>{selectedAgRecord.subject || "-"}</strong></div>
+                      <div className="issue-client-profile__item"><span>Recipient</span><strong>{selectedAgRecord.recipientName || "-"}</strong></div>
+                    </div>
+                    <button className="button button-primary" type="button" onClick={applySelectedAgData}>
+                      Use AG data
+                    </button>
+                  </div>
+                ) : selectedRelatedLetter ? (
+                  <p className="helper-note" style={{ marginTop: 12 }}>Selected record is a letter. Select an AG row to reuse AG number and issue date.</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="button-row span-2">
               <button className="button button-secondary" type="button" onClick={onEditTemplate} disabled={!selectedTemplate}>
                 Edit Selected Template
               </button>
             </div>
             {selectionWarning ? <p className="helper-note helper-note--warning span-2">{selectionWarning}</p> : null}
-            <div className="design-settings span-2 employee-lookup-panel">
-              <div className="design-settings__header">
-                <div>
-                  <p className="eyebrow">HR Sync</p>
-                  <h3>Fetch employee details</h3>
-                </div>
-              </div>
-              <div className="employee-lookup-toolbar">
-                <input
-                  type="text"
-                  value={employeeQuery}
-                  onChange={(event) => setEmployeeQuery(event.target.value)}
-                  placeholder="Search by Employee ID, name, or CNIC"
-                />
-                <button className="button button-secondary" type="button" onClick={searchEmployeeRecords} disabled={employeeLookupBusy}>
-                  {employeeLookupBusy ? "Searching..." : "Search"}
-                </button>
-              </div>
-              {employeeLookupError ? <p className="employee-lookup-error">{employeeLookupError}</p> : null}
-              {employeeResults.length ? (
-                <div className="employee-lookup-results">
-                  {employeeResults.map((employee) => (
-                    <article className="employee-lookup-card" key={employee.id || employee.empId}>
-                      <div>
-                        <strong>{employee.fullName || "Unnamed Employee"}</strong>
-                        <p>
-                          {employee.empId || "No ID"} {employee.cnic ? `| CNIC: ${employee.cnic}` : ""}
-                        </p>
-                        <p>
-                          {employee.departmentName || "No department"} {employee.designation ? `| ${employee.designation}` : ""}
-                        </p>
-                      </div>
-                      <button className="button button-secondary" type="button" onClick={() => applyEmployeeToDraft(employee)}>
-                        Use
-                      </button>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-            </div>
             <label className="span-2">
-              Letter no override (optional)
+              {manualNumberLabel} override (optional)
               <input
                 type="text"
                 value={draft.letterNoManual || ""}
                 onChange={(event) => updateField("letterNoManual", event.target.value)}
-                placeholder="Leave blank for auto numbering"
+                placeholder={`Leave blank for auto ${manualNumberLabel.toLowerCase()}`}
               />
             </label>
             <label className="span-2">
@@ -456,8 +708,9 @@ export default function IssueLetterView({
                 <div className="dynamic-field-grid">
                   {dynamicTokenFields.map((field) => (
                     <label key={field.key}>
-                      {field.label} <code>{field.token}</code>
+                      {field.label} {field.required ? "*" : ""} <code>{field.token}</code>
                       <input
+                        required={field.required}
                         type="text"
                         value={(draft.customFields && draft.customFields[field.key]) || ""}
                         onChange={(event) => updateCustomField(field.key, event.target.value)}
@@ -487,7 +740,15 @@ export default function IssueLetterView({
               />
             </label>
             <div className="button-row span-2">
-              <button className="button button-primary" type="submit" disabled={!canIssueLetter}>
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={!canIssueLetter}
+                onPointerDown={() => {
+                  generateClickRequestedRef.current = true;
+                }}
+                onClick={handleGenerateLetterClick}
+              >
                 {isEditingLetter ? "Update letter record" : "Generate letter record"}
               </button>
               <button className="button button-secondary" type="button" onClick={onPrint} disabled={!preview}>

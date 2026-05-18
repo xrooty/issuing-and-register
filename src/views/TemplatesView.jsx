@@ -1,13 +1,17 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import EmptyState from "../components/EmptyState";
 import {
   DEFAULT_REFERENCE_PATTERN,
+  ISSUE_LETTER_TYPE_OPTIONS,
   LETTER_FIELD_OPTIONS,
   createId,
+  getTemplateDynamicTokenFields,
   normalizeCustomFieldKey,
   normalizeReferencePattern,
   normalizeTemplateCustomFields,
   normalizeTemplateDesign,
+  normalizeTemplateDesignForIssueType,
+  templateMatchesIssueLetterType,
 } from "../utils/lettering";
 
 const DESIGN_LAYOUTS = [
@@ -32,6 +36,11 @@ const ELEMENT_TYPES = [
   { value: "rect", label: "Box" },
   { value: "line", label: "Line" },
   { value: "field", label: "Field" },
+];
+
+const DEFAULT_TEMPLATE_TYPE_OPTIONS = [
+  { code: "LETTER", name: "Letter" },
+  { code: "AG", name: "AG" },
 ];
 
 const CUSTOM_FIELD_TYPES = [
@@ -75,10 +84,14 @@ const INLINE_MARKDOWN_PATTERN = /(\+\+[^+\n]+?\+\+|\*\*[^*\n]+?\*\*|__[^_\n]+?__
 
 const A4_CANVAS_WIDTH = 794;
 const A4_CANVAS_HEIGHT = 1123;
+const LEGAL_CANVAS_WIDTH = 816;
+const LEGAL_CANVAS_HEIGHT = 1344;
 const MINI_PREVIEW_SCALE = 0.34;
 const MAX_CANVAS_HISTORY = 200;
 const SNAP_THRESHOLD_PERCENT = 0.9;
 const DRAG_ACTIVATION_DISTANCE_PX = 4;
+const NUDGE_STEP_PERCENT = 0.25;
+const NUDGE_STEP_LARGE_PERCENT = 1;
 
 const BACKGROUND_TEXT_PRESET = [
   {
@@ -172,6 +185,13 @@ function uniqueNumeric(values = []) {
   );
 }
 
+function normalizeTemplateTypeKey(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
 function createDuplicatedElement(sourceElement, zIndex) {
   const width = clamp(Number(sourceElement?.width || 20), 1, 100);
   const height = clamp(Number(sourceElement?.height || 8), 0.8, 100);
@@ -183,6 +203,7 @@ function createDuplicatedElement(sourceElement, zIndex) {
     id: createId(),
     x,
     y,
+    pageIndex: Math.max(0, Number(sourceElement?.pageIndex || 0)),
     zIndex,
   };
 }
@@ -523,6 +544,8 @@ function renderEditorMarkdownBlocks(text, keyPrefix) {
 }
 
 function getInitialForm(overrides = {}) {
+  const { design, ...restOverrides } = overrides;
+
   return {
     companyId: "",
     departmentId: "",
@@ -532,9 +555,8 @@ function getInitialForm(overrides = {}) {
     refCode: "",
     letterNoPattern: "",
     bodyTemplate: "",
-    design: normalizeTemplateDesign(),
-    ...overrides,
-    design: normalizeTemplateDesign(overrides.design),
+    ...restOverrides,
+    design: normalizeTemplateDesign(design),
   };
 }
 
@@ -542,6 +564,7 @@ function createCanvasElement(type) {
   if (type === "line") {
     return {
       id: createId(),
+      pageIndex: 0,
       type,
       x: 10,
       y: 12,
@@ -569,6 +592,7 @@ function createCanvasElement(type) {
   if (type === "rect") {
     return {
       id: createId(),
+      pageIndex: 0,
       type,
       x: 10,
       y: 10,
@@ -596,6 +620,7 @@ function createCanvasElement(type) {
   if (type === "field") {
     return {
       id: createId(),
+      pageIndex: 0,
       type: "field",
       x: 10,
       y: 10,
@@ -623,6 +648,7 @@ function createCanvasElement(type) {
 
   return {
     id: createId(),
+    pageIndex: 0,
     type: "text",
     x: 10,
     y: 10,
@@ -650,6 +676,7 @@ function createCanvasElement(type) {
 function createBackgroundTextElements() {
   return BACKGROUND_TEXT_PRESET.map((item, index) => ({
     id: createId(),
+    pageIndex: 0,
     type: "text",
     x: item.x,
     y: item.y,
@@ -711,27 +738,41 @@ function getElementLabel(element, index) {
 export default function TemplatesView({
   companies,
   departments,
+  templateTypes = [],
   templates,
   onAddTemplate,
   onUpdateTemplate,
   onDeleteTemplate,
   onDuplicateTemplate,
   onBulkDeleteTemplates,
+  onAddTemplateType,
+  onDeleteTemplateType,
   editTemplateId,
   onConsumeEditTarget,
 }) {
   const [form, setForm] = useState(() => getInitialForm());
+  const [newTemplateTypeName, setNewTemplateTypeName] = useState("");
   const [selectedElementId, setSelectedElementId] = useState("");
   const [selectedElementIds, setSelectedElementIds] = useState([]);
   const [editingTemplateId, setEditingTemplateId] = useState("");
   const [selectedTemplateIds, setSelectedTemplateIds] = useState([]);
+  const [templateListTypeFilter, setTemplateListTypeFilter] = useState("ALL");
+  const [templateListCompanyFilter, setTemplateListCompanyFilter] = useState("ALL");
+  const [templateListDepartmentFilter, setTemplateListDepartmentFilter] = useState("ALL");
+  const [templateSearchTerm, setTemplateSearchTerm] = useState("");
   const [isFullscreenEditorOpen, setIsFullscreenEditorOpen] = useState(false);
+  const [activeEditorPageIndex, setActiveEditorPageIndex] = useState(0);
+  const [isEditorSidebarCollapsed, setIsEditorSidebarCollapsed] = useState(false);
+  const [activeEditorSidebarSection, setActiveEditorSidebarSection] = useState("pages");
+  const [isEditorInspectorOpen, setIsEditorInspectorOpen] = useState(true);
   const [inlineTextEditElementId, setInlineTextEditElementId] = useState("");
   const [editorZoomPercent, setEditorZoomPercent] = useState(100);
   const [canvasHistory, setCanvasHistory] = useState({ past: [], future: [] });
   const [showAdvancedBuilder, setShowAdvancedBuilder] = useState(false);
   const [copiedCanvasElement, setCopiedCanvasElement] = useState(null);
   const [alignmentGuides, setAlignmentGuides] = useState({ vertical: null, horizontal: null });
+  const [isCanvasPanMode, setIsCanvasPanMode] = useState(false);
+  const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const [customFieldDraft, setCustomFieldDraft] = useState(() => createCustomFieldDraft());
   const inlineCanvasRef = useRef(null);
   const fullscreenCanvasRef = useRef(null);
@@ -741,9 +782,119 @@ export default function TemplatesView({
   const textSelectionRef = useRef({ start: 0, end: 0, source: "raw", elementId: "" });
   const pendingInlineCaretRef = useRef(null);
   const interactionRef = useRef(null);
+  const panInteractionRef = useRef(null);
   const canvasElementsRef = useRef(form.design.canvas.elements || []);
 
+  const templateTypeOptions = [...DEFAULT_TEMPLATE_TYPE_OPTIONS, ...templateTypes].reduce((options, type) => {
+    const name = String(type?.name || "").trim();
+    if (!name) {
+      return options;
+    }
+
+    const key = normalizeTemplateTypeKey(type?.code || name);
+    if (!key || options.some((option) => normalizeTemplateTypeKey(option.code || option.name) === key)) {
+      return options;
+    }
+
+    return [
+      ...options,
+      {
+        id: type?.id || "",
+        code: type?.code || key,
+        name,
+      },
+    ];
+  }, []);
+  const selectedTemplateType = templateTypeOptions.find((type) => type.name === form.type) || null;
+  const templateListDepartmentOptions = useMemo(
+    () =>
+      templateListCompanyFilter === "ALL"
+        ? departments
+        : departments.filter((department) => department.companyId === templateListCompanyFilter),
+    [departments, templateListCompanyFilter],
+  );
+  const companyById = useMemo(
+    () => new Map(companies.map((company) => [company.id, company])),
+    [companies],
+  );
+  const departmentById = useMemo(
+    () => new Map(departments.map((department) => [department.id, department])),
+    [departments],
+  );
+  const filteredTemplates = useMemo(
+    () => {
+      const normalizedSearchTerm = String(templateSearchTerm || "").trim().toLowerCase();
+
+      return templates.filter((template) => {
+        if (templateListTypeFilter !== "ALL" && !templateMatchesIssueLetterType(template, templateListTypeFilter)) {
+          return false;
+        }
+
+        if (templateListCompanyFilter !== "ALL" && template.companyId !== templateListCompanyFilter) {
+          return false;
+        }
+
+        if (templateListDepartmentFilter !== "ALL" && template.departmentId !== templateListDepartmentFilter) {
+          return false;
+        }
+
+        if (normalizedSearchTerm) {
+          const companyName = String(companyById.get(template.companyId)?.name || "").toLowerCase();
+          const departmentName = String(departmentById.get(template.departmentId)?.name || "").toLowerCase();
+          const searchableText = [
+            template.name,
+            template.type,
+            template.defaultSubject,
+            template.refCode,
+            template.letterNoPattern,
+            companyName,
+            departmentName,
+          ]
+            .map((value) => String(value || "").toLowerCase())
+            .join(" ");
+
+          if (!searchableText.includes(normalizedSearchTerm)) {
+            return false;
+          }
+        }
+
+        return true;
+      }).sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+    },
+    [
+      companyById,
+      departmentById,
+      templateListCompanyFilter,
+      templateListDepartmentFilter,
+      templateListTypeFilter,
+      templateSearchTerm,
+      templates,
+    ],
+  );
+  const filteredTemplateIdSet = useMemo(
+    () => new Set(filteredTemplates.map((template) => template.id)),
+    [filteredTemplates],
+  );
+  const selectedFilteredTemplateIds = selectedTemplateIds.filter((id) => filteredTemplateIdSet.has(id));
   const customFieldDefinitions = form.design.customFields || [];
+  const detectedDynamicTokenFields = getTemplateDynamicTokenFields({ ...form, design: form.design });
+  const requiredTokenKeySet = new Set(form.design.requiredTokenKeys || []);
+  const activePageSize = String(form.design.pageSize || "A4").toUpperCase() === "LEGAL" ? "LEGAL" : "A4";
+  const canvasWidth = activePageSize === "LEGAL" ? LEGAL_CANVAS_WIDTH : A4_CANVAS_WIDTH;
+  const canvasHeight = activePageSize === "LEGAL" ? LEGAL_CANVAS_HEIGHT : A4_CANVAS_HEIGHT;
+  const totalTemplatePages = Math.max(1, Number(form.design.additionalPages || 1));
+  const templatePageIndexes = useMemo(
+    () => Array.from({ length: totalTemplatePages }, (_, index) => index),
+    [totalTemplatePages],
+  );
+  const allCanvasElements = useMemo(
+    () => [...(form.design.canvas.elements || [])].sort((left, right) => left.zIndex - right.zIndex),
+    [form.design.canvas.elements],
+  );
+  const visibleCanvasElements = useMemo(
+    () => (form.design.canvas.elements || []).filter((element) => Number(element.pageIndex || 0) === activeEditorPageIndex),
+    [activeEditorPageIndex, form.design.canvas.elements],
+  );
   const customFieldTokenOptions = customFieldDefinitions.map((field) => ({
     label: field.label,
     key: `cf_${field.key}`,
@@ -783,6 +934,23 @@ export default function TemplatesView({
     }
   }, [companies, form.companyId]);
 
+  useEffect(() => {
+    if (!form.type && templateTypeOptions[0]?.name) {
+      setForm((current) => ({ ...current, type: templateTypeOptions[0].name }));
+    }
+  }, [form.type, templateTypeOptions]);
+
+  useEffect(() => {
+    if (templateListDepartmentFilter === "ALL") {
+      return;
+    }
+
+    const departmentIsVisible = templateListDepartmentOptions.some((department) => department.id === templateListDepartmentFilter);
+    if (!departmentIsVisible) {
+      setTemplateListDepartmentFilter("ALL");
+    }
+  }, [templateListDepartmentFilter, templateListDepartmentOptions]);
+
   const departmentOptions = departments.filter((department) => department.companyId === form.companyId);
 
   useEffect(() => {
@@ -792,33 +960,42 @@ export default function TemplatesView({
   }, [departmentOptions, form.departmentId]);
 
   useEffect(() => {
-    const currentElements = form.design.canvas.elements;
+    if (activeEditorPageIndex >= totalTemplatePages) {
+      setActiveEditorPageIndex(Math.max(0, totalTemplatePages - 1));
+    }
+  }, [activeEditorPageIndex, totalTemplatePages]);
+
+  useEffect(() => {
+    const currentElements = visibleCanvasElements;
     if (!currentElements.some((element) => element.id === selectedElementId)) {
       setSelectedElementId(currentElements[0]?.id || "");
     }
-  }, [form.design.canvas.elements, selectedElementId]);
+  }, [visibleCanvasElements, selectedElementId]);
 
   useEffect(() => {
-    const currentElements = form.design.canvas.elements || [];
+    const currentElements = visibleCanvasElements || [];
     const currentIdSet = new Set(currentElements.map((element) => element.id));
 
     setSelectedElementIds((current) => {
-      const filtered = (Array.isArray(current) ? current : []).filter((id) => currentIdSet.has(id));
+      const source = Array.isArray(current) ? current : [];
+      const filtered = source.filter((id) => currentIdSet.has(id));
+      const sameIds = (left, right) => left.length === right.length && left.every((id, index) => id === right[index]);
       if (!selectedElementId) {
-        return filtered;
+        return sameIds(source, filtered) ? current : filtered;
       }
 
       if (!currentIdSet.has(selectedElementId)) {
-        return filtered;
+        return sameIds(source, filtered) ? current : filtered;
       }
 
       if (filtered.includes(selectedElementId)) {
-        return filtered;
+        return sameIds(source, filtered) ? current : filtered;
       }
 
-      return [selectedElementId];
+      const next = [selectedElementId];
+      return sameIds(source, next) ? current : next;
     });
-  }, [form.design.canvas.elements, selectedElementId]);
+  }, [visibleCanvasElements, selectedElementId]);
 
   useEffect(() => {
     if (!inlineTextEditElementId) {
@@ -882,10 +1059,16 @@ export default function TemplatesView({
 
   function openFullscreenEditor() {
     setIsFullscreenEditorOpen(true);
+    setIsCanvasPanMode(false);
+    setIsCanvasPanning(false);
+    setActiveEditorSidebarSection("layers");
+    setIsEditorInspectorOpen(true);
   }
 
   function closeFullscreenEditor() {
     closeInlineEditor(true);
+    stopViewportPan();
+    setIsCanvasPanMode(false);
     setIsFullscreenEditorOpen(false);
   }
 
@@ -1003,8 +1186,8 @@ export default function TemplatesView({
       return;
     }
 
-    const availableWidth = Math.max(viewport.clientWidth - 24, 120);
-    const ratio = (availableWidth / A4_CANVAS_WIDTH) * 100;
+    const availableWidth = Math.max(viewport.clientWidth - 96, 120);
+    const ratio = (availableWidth / canvasWidth) * 105;
     applyEditorZoom(ratio);
   }
 
@@ -1014,11 +1197,104 @@ export default function TemplatesView({
       return;
     }
 
-    const availableWidth = Math.max(viewport.clientWidth - 24, 120);
-    const availableHeight = Math.max(viewport.clientHeight - 24, 120);
-    const widthRatio = availableWidth / A4_CANVAS_WIDTH;
-    const heightRatio = availableHeight / A4_CANVAS_HEIGHT;
+    const availableWidth = Math.max(viewport.clientWidth - 96, 120);
+    const availableHeight = Math.max(viewport.clientHeight - 96, 120);
+    const widthRatio = availableWidth / canvasWidth;
+    const heightRatio = availableHeight / canvasHeight;
     applyEditorZoom(Math.min(widthRatio, heightRatio) * 100);
+  }
+
+  function fitEditorToHeight() {
+    const viewport = fullscreenViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const availableHeight = Math.max(viewport.clientHeight - 96, 120);
+    const ratio = (availableHeight / canvasHeight) * 100;
+    applyEditorZoom(ratio);
+  }
+
+  function stopViewportPan(event) {
+    const interaction = panInteractionRef.current;
+    const viewport = fullscreenViewportRef.current;
+    if (!interaction) {
+      return;
+    }
+
+    if (
+      event?.pointerId != null &&
+      interaction.pointerId != null &&
+      Number(event.pointerId) !== Number(interaction.pointerId)
+    ) {
+      return;
+    }
+
+    if (viewport && interaction.pointerId != null && typeof viewport.releasePointerCapture === "function") {
+      try {
+        viewport.releasePointerCapture(interaction.pointerId);
+      } catch {
+        // Ignore release errors for stale pointer ids.
+      }
+    }
+
+    panInteractionRef.current = null;
+    setIsCanvasPanning(false);
+  }
+
+  function handleViewportPointerDown(event) {
+    if (!isFullscreenEditorOpen) {
+      return;
+    }
+
+    const isMiddleButton = event.button === 1;
+    const isHandToolDrag = event.button === 0 && isCanvasPanMode;
+    if (!isMiddleButton && !isHandToolDrag) {
+      return;
+    }
+
+    const viewport = fullscreenViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (typeof viewport.setPointerCapture === "function") {
+      try {
+        viewport.setPointerCapture(event.pointerId);
+      } catch {
+        // Some pointer types may not allow capture; fallback still works.
+      }
+    }
+
+    panInteractionRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop,
+    };
+    setIsCanvasPanning(true);
+  }
+
+  function handleViewportPointerMove(event) {
+    const interaction = panInteractionRef.current;
+    const viewport = fullscreenViewportRef.current;
+    if (!interaction || !viewport) {
+      return;
+    }
+
+    if (interaction.pointerId != null && event.pointerId != null && event.pointerId !== interaction.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const deltaX = event.clientX - interaction.startClientX;
+    const deltaY = event.clientY - interaction.startClientY;
+    viewport.scrollLeft = interaction.startScrollLeft - deltaX;
+    viewport.scrollTop = interaction.startScrollTop - deltaY;
   }
 
   useEffect(() => {
@@ -1028,6 +1304,56 @@ export default function TemplatesView({
 
     const frameId = window.requestAnimationFrame(() => fitEditorToPage());
     return () => window.cancelAnimationFrame(frameId);
+  }, [isFullscreenEditorOpen]);
+
+  useEffect(() => {
+    if (!isFullscreenEditorOpen) {
+      setIsCanvasPanMode(false);
+      setIsCanvasPanning(false);
+      panInteractionRef.current = null;
+      return undefined;
+    }
+
+    function onKeyDown(event) {
+      if (event.key !== " ") {
+        return;
+      }
+
+      const activeTag = document.activeElement?.tagName || "";
+      const isTypingTarget =
+        activeTag === "INPUT" ||
+        activeTag === "TEXTAREA" ||
+        activeTag === "SELECT" ||
+        document.activeElement?.getAttribute("contenteditable") === "true";
+      if (isTypingTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsCanvasPanMode(true);
+    }
+
+    function onKeyUp(event) {
+      if (event.key === " ") {
+        setIsCanvasPanMode(false);
+      }
+    }
+
+    function onBlur() {
+      setIsCanvasPanMode(false);
+      setIsCanvasPanning(false);
+      panInteractionRef.current = null;
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [isFullscreenEditorOpen]);
 
   useEffect(() => {
@@ -1082,8 +1408,49 @@ export default function TemplatesView({
         return;
       }
 
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        stopViewportPan();
+        setIsCanvasPanMode((current) => !current);
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (!selectedElementId && !selectedElementIds.length) {
+          return;
+        }
+        event.preventDefault();
+        removeSelectedElement({ skipConfirm: true });
+        return;
+      }
+
+      if (event.key.startsWith("Arrow")) {
+        const step = event.shiftKey ? NUDGE_STEP_LARGE_PERCENT : NUDGE_STEP_PERCENT;
+        let moved = false;
+        if (event.key === "ArrowLeft") {
+          moved = nudgeSelectedElements(-step, 0);
+        } else if (event.key === "ArrowRight") {
+          moved = nudgeSelectedElements(step, 0);
+        } else if (event.key === "ArrowUp") {
+          moved = nudgeSelectedElements(0, -step);
+        } else if (event.key === "ArrowDown") {
+          moved = nudgeSelectedElements(0, step);
+        }
+
+        if (moved) {
+          event.preventDefault();
+        }
+        return;
+      }
+
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
       if (!ctrlOrMeta) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        selectAllElementsOnActivePage();
         return;
       }
 
@@ -1126,12 +1493,38 @@ export default function TemplatesView({
 
         event.preventDefault();
         pasteCopiedElement();
+        return;
+      }
+
+      if (event.key === "0") {
+        event.preventDefault();
+        fitEditorToPage();
+        return;
+      }
+
+      if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        applyEditorZoom(editorZoomPercent + 10);
+        return;
+      }
+
+      if (event.key === "-") {
+        event.preventDefault();
+        applyEditorZoom(editorZoomPercent - 10);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canRedoCanvas, canUndoCanvas, copiedCanvasElement, isFullscreenEditorOpen, selectedElementId]);
+  }, [
+    canRedoCanvas,
+    canUndoCanvas,
+    copiedCanvasElement,
+    editorZoomPercent,
+    isFullscreenEditorOpen,
+    selectedElementId,
+    selectedElementIds,
+  ]);
 
   useEffect(() => {
     function onTextStyleShortcut(event) {
@@ -1203,6 +1596,7 @@ export default function TemplatesView({
     );
     clearCanvasSelection();
     setInlineTextEditElementId("");
+    setActiveEditorPageIndex(0);
     setAlignmentGuides({ vertical: null, horizontal: null });
   }
 
@@ -1240,6 +1634,7 @@ export default function TemplatesView({
     setShowAdvancedBuilder(false);
     setSelectedElementId(canvasElements[0]?.id || "");
     setSelectedElementIds(canvasElements[0]?.id ? [canvasElements[0].id] : []);
+    setActiveEditorPageIndex(0);
     setInlineTextEditElementId("");
     setAlignmentGuides({ vertical: null, horizontal: null });
     clearCanvasHistory();
@@ -1452,7 +1847,17 @@ export default function TemplatesView({
   }, [isFullscreenEditorOpen]);
 
   function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      if (field !== "type") {
+        return { ...current, [field]: value };
+      }
+
+      return {
+        ...current,
+        type: value,
+        design: normalizeTemplateDesignForIssueType(current.design, value),
+      };
+    });
   }
 
   function updateDesign(field, value) {
@@ -1463,6 +1868,104 @@ export default function TemplatesView({
         [field]: value,
       },
     }));
+  }
+
+  function addEditorPage() {
+    updateDesign("additionalPages", totalTemplatePages + 1);
+    setActiveEditorPageIndex(totalTemplatePages);
+    setActiveEditorSidebarSection("pages");
+    clearCanvasSelection();
+    setInlineTextEditElementId("");
+  }
+
+  function duplicateEditorPage(pageIndex = activeEditorPageIndex) {
+    const sourceElements = (form.design.canvas.elements || []).filter((element) => Number(element.pageIndex || 0) === pageIndex);
+    const nextPageIndex = totalTemplatePages;
+    let duplicatedIds = [];
+
+    setForm((current) => {
+      const existing = current.design.canvas.elements || [];
+      const pageSource = existing.filter((element) => Number(element.pageIndex || 0) === pageIndex);
+      const duplicates = pageSource.map((element, index) => ({
+        ...createDuplicatedElement(element, existing.length + index),
+        pageIndex: nextPageIndex,
+        x: Number(element.x || 0),
+        y: Number(element.y || 0),
+      }));
+      duplicatedIds = duplicates.map((element) => element.id);
+
+      return {
+        ...current,
+        design: {
+          ...current.design,
+          additionalPages: totalTemplatePages + 1,
+          canvas: {
+            ...current.design.canvas,
+            elements: [...existing, ...duplicates].map((element, index) => ({ ...element, zIndex: index })),
+          },
+        },
+      };
+    });
+
+    setActiveEditorPageIndex(nextPageIndex);
+    setActiveEditorSidebarSection("pages");
+    setSelectedElementId(duplicatedIds[0] || "");
+    setSelectedElementIds(duplicatedIds);
+    setInlineTextEditElementId("");
+    setAlignmentGuides({ vertical: null, horizontal: null });
+
+    if (!sourceElements.length) {
+      clearCanvasSelection();
+    }
+  }
+
+  function deleteEditorPage(pageIndex = activeEditorPageIndex) {
+    if (totalTemplatePages <= 1) {
+      return;
+    }
+
+    const pageElements = (form.design.canvas.elements || []).filter((element) => Number(element.pageIndex || 0) === pageIndex);
+    const confirmed = window.confirm(
+      pageElements.length
+        ? `Delete page ${pageIndex + 1} and its ${pageElements.length} element${pageElements.length === 1 ? "" : "s"}?`
+        : `Delete page ${pageIndex + 1}?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setForm((current) => {
+      const nextElements = (current.design.canvas.elements || [])
+        .filter((element) => Number(element.pageIndex || 0) !== pageIndex)
+        .map((element) =>
+          Number(element.pageIndex || 0) > pageIndex
+            ? { ...element, pageIndex: Number(element.pageIndex || 0) - 1 }
+            : element,
+        )
+        .map((element, index) => ({ ...element, zIndex: index }));
+
+      return {
+        ...current,
+        design: {
+          ...current.design,
+          additionalPages: Math.max(1, Number(current.design.additionalPages || 1) - 1),
+          canvas: {
+            ...current.design.canvas,
+            elements: nextElements,
+          },
+        },
+      };
+    });
+
+    clearCanvasSelection();
+    setInlineTextEditElementId("");
+    setAlignmentGuides({ vertical: null, horizontal: null });
+    setActiveEditorPageIndex((current) => {
+      if (current > pageIndex) {
+        return current - 1;
+      }
+      return Math.max(0, Math.min(current, totalTemplatePages - 2));
+    });
   }
 
   function updateBackground(field, value) {
@@ -1554,8 +2057,47 @@ export default function TemplatesView({
     setSelectedElementIds([]);
   }
 
+  function selectAllElementsOnActivePage() {
+    const ids = canvasElements.map((element) => element.id);
+    if (!ids.length) {
+      clearCanvasSelection();
+      return;
+    }
+
+    setSelectedElementId(ids[ids.length - 1]);
+    setSelectedElementIds(ids);
+  }
+
+  function nudgeSelectedElements(deltaX = 0, deltaY = 0) {
+    const baseSelection = Array.isArray(selectedElementIds) && selectedElementIds.length
+      ? selectedElementIds
+      : selectedElementId
+        ? [selectedElementId]
+        : [];
+    if (!baseSelection.length) {
+      return false;
+    }
+
+    const selectedSet = new Set(baseSelection);
+    return updateCanvasElements((elements) =>
+      elements.map((element) => {
+        if (!selectedSet.has(element.id)) {
+          return element;
+        }
+
+        const width = Number(element.width || 0);
+        const height = Number(element.height || 0);
+        return {
+          ...element,
+          x: clamp(Number(element.x || 0) + Number(deltaX || 0), 0, 100 - width),
+          y: clamp(Number(element.y || 0) + Number(deltaY || 0), 0, 100 - height),
+        };
+      }),
+    );
+  }
+
   function handleElementListSelection(event, elementId) {
-    const multiToggle = Boolean(event?.ctrlKey || event?.metaKey);
+    const multiToggle = Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey);
     if (multiToggle) {
       const source = Array.isArray(selectedElementIds) ? selectedElementIds : [];
       if (source.includes(elementId)) {
@@ -1577,7 +2119,11 @@ export default function TemplatesView({
   }
 
   function handleElementPointerDown(event, element, mode = "drag") {
-    const multiToggle = mode === "drag" && Boolean(event?.ctrlKey || event?.metaKey);
+    if (isFullscreenEditorOpen && (isCanvasPanMode || event.button === 1)) {
+      return;
+    }
+
+    const multiToggle = mode === "drag" && Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey);
     if (multiToggle) {
       event.preventDefault();
       event.stopPropagation();
@@ -1676,6 +2222,7 @@ export default function TemplatesView({
 
   function addCanvasElement(type) {
     const newElement = createCanvasElement(type);
+    newElement.pageIndex = activeEditorPageIndex;
     updateCanvasElements((elements) => [...elements, { ...newElement, zIndex: elements.length }]);
     setSelectedElementId(newElement.id);
     setSelectedElementIds([newElement.id]);
@@ -1683,8 +2230,11 @@ export default function TemplatesView({
   }
 
   function applyBackgroundTextPreset() {
-    const presetElements = createBackgroundTextElements();
-    updateCanvasElements(() => presetElements);
+    const presetElements = createBackgroundTextElements().map((element) => ({ ...element, pageIndex: activeEditorPageIndex }));
+    updateCanvasElements((elements) => {
+      const retained = elements.filter((element) => Number(element.pageIndex || 0) !== activeEditorPageIndex);
+      return [...retained, ...presetElements].map((element, index) => ({ ...element, zIndex: index }));
+    });
     setSelectedElementId(presetElements[0]?.id || "");
     setSelectedElementIds(presetElements[0]?.id ? [presetElements[0].id] : []);
     setInlineTextEditElementId("");
@@ -2315,6 +2865,18 @@ export default function TemplatesView({
     updateCustomFields((fields) => fields.filter((_, fieldIndex) => fieldIndex !== index));
   }
 
+  function toggleRequiredToken(tokenKey, isRequired) {
+    const normalizedKey = normalizeCustomFieldKey(tokenKey, "");
+    if (!normalizedKey) {
+      return;
+    }
+    const source = Array.isArray(form.design.requiredTokenKeys) ? form.design.requiredTokenKeys : [];
+    const next = isRequired
+      ? Array.from(new Set([...source, normalizedKey]))
+      : source.filter((item) => item !== normalizedKey);
+    updateDesign("requiredTokenKeys", next);
+  }
+
   function appendTokenToSelectedText(token) {
     if (!selectedElement || selectedElement.type !== "text") {
       return;
@@ -2375,7 +2937,8 @@ export default function TemplatesView({
     updateSelectedElement({ text: lines.join("\n") });
   }
 
-  function removeSelectedElement() {
+  function removeSelectedElement(options = {}) {
+    const { skipConfirm = false } = options;
     const baseSelection = Array.isArray(selectedElementIds) && selectedElementIds.length
       ? selectedElementIds
       : selectedElementId
@@ -2385,13 +2948,15 @@ export default function TemplatesView({
       return;
     }
 
-    const confirmed = window.confirm(
-      baseSelection.length > 1
-        ? `Delete ${baseSelection.length} selected canvas elements?`
-        : "Delete selected canvas element?",
-    );
-    if (!confirmed) {
-      return;
+    if (!skipConfirm) {
+      const confirmed = window.confirm(
+        baseSelection.length > 1
+          ? `Delete ${baseSelection.length} selected canvas elements?`
+          : "Delete selected canvas element?",
+      );
+      if (!confirmed) {
+        return;
+      }
     }
 
     const selectedSet = new Set(baseSelection);
@@ -2407,11 +2972,28 @@ export default function TemplatesView({
   }
 
   function toggleSelectAllTemplates() {
-    if (!templates.length) {
+    if (!filteredTemplates.length) {
       return;
     }
 
-    setSelectedTemplateIds((current) => (current.length === templates.length ? [] : templates.map((template) => template.id)));
+    setSelectedTemplateIds((current) => {
+      const currentSet = new Set(current);
+      const allFilteredSelected = filteredTemplates.every((template) => currentSet.has(template.id));
+
+      if (allFilteredSelected) {
+        return current.filter((id) => !filteredTemplateIdSet.has(id));
+      }
+
+      filteredTemplates.forEach((template) => currentSet.add(template.id));
+      return Array.from(currentSet);
+    });
+  }
+
+  function resetTemplateLibraryFilters() {
+    setTemplateSearchTerm("");
+    setTemplateListCompanyFilter("ALL");
+    setTemplateListDepartmentFilter("ALL");
+    setTemplateListTypeFilter("ALL");
   }
 
   async function handleDeleteTemplateById(templateId) {
@@ -2443,18 +3025,67 @@ export default function TemplatesView({
     setSelectedTemplateIds((current) => current.filter((id) => id !== templateId));
   }
 
-  async function handleBulkDeleteSelection() {
-    if (!onBulkDeleteTemplates || !selectedTemplateIds.length) {
+  async function handleAddTemplateType() {
+    const name = newTemplateTypeName.trim();
+    if (!name || !onAddTemplateType) {
       return;
     }
 
-    const deleted = await onBulkDeleteTemplates(selectedTemplateIds);
+    const created = await onAddTemplateType(name);
+    if (!created) {
+      return;
+    }
+
+    updateField("type", created.name || name);
+    setNewTemplateTypeName("");
+  }
+
+  async function handleDeleteSelectedTemplateType() {
+    if (!selectedTemplateType?.id || !onDeleteTemplateType) {
+      return;
+    }
+
+    const deleted = await onDeleteTemplateType(selectedTemplateType.id);
     if (!deleted) {
       return;
     }
 
-    const deletedSet = new Set(selectedTemplateIds);
-    setSelectedTemplateIds([]);
+    const nextType = templateTypeOptions.find((type) => type.id !== selectedTemplateType.id)?.name || "";
+    updateField("type", nextType);
+  }
+
+  async function handleSaveAsTemplate() {
+    if (!editingTemplateId || !onDuplicateTemplate) {
+      return;
+    }
+
+    const suggestedName = String(form.name || "Letter Agreement").trim() || "Letter Agreement";
+    const requestedName = window.prompt("Save as new Letter Agreement", `${suggestedName} Copy`);
+    if (requestedName == null) {
+      return;
+    }
+
+    const duplicateName = String(requestedName || "").trim();
+    if (!duplicateName) {
+      window.alert("Please enter a name for the new Letter Agreement.");
+      return;
+    }
+
+    await onDuplicateTemplate(editingTemplateId, { name: duplicateName });
+  }
+
+  async function handleBulkDeleteSelection() {
+    if (!onBulkDeleteTemplates || !selectedFilteredTemplateIds.length) {
+      return;
+    }
+
+    const deleted = await onBulkDeleteTemplates(selectedFilteredTemplateIds);
+    if (!deleted) {
+      return;
+    }
+
+    const deletedSet = new Set(selectedFilteredTemplateIds);
+    setSelectedTemplateIds((current) => current.filter((id) => !deletedSet.has(id)));
     if (editingTemplateId && deletedSet.has(editingTemplateId)) {
       resetToCreateMode();
     }
@@ -2484,7 +3115,7 @@ export default function TemplatesView({
   }
 
   function clearCanvas() {
-    updateCanvasElements(() => []);
+    updateCanvasElements((elements) => elements.filter((element) => Number(element.pageIndex || 0) !== activeEditorPageIndex));
     clearCanvasSelection();
     setInlineTextEditElementId("");
     setAlignmentGuides({ vertical: null, horizontal: null });
@@ -2499,17 +3130,8 @@ export default function TemplatesView({
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      let firstPresetId = "";
 
       setForm((current) => {
-        const existingElements = current.design.canvas?.elements || [];
-        const shouldCreatePreset = !existingElements.length;
-        const presetElements = shouldCreatePreset ? createBackgroundTextElements() : existingElements;
-
-        if (shouldCreatePreset) {
-          firstPresetId = presetElements[0]?.id || "";
-        }
-
         return {
           ...current,
           design: {
@@ -2520,18 +3142,9 @@ export default function TemplatesView({
               dataUrl,
               fileName: file.name,
             },
-            canvas: {
-              ...current.design.canvas,
-              elements: presetElements,
-            },
           },
         };
       });
-
-      if (firstPresetId) {
-        setSelectedElementId(firstPresetId);
-        setSelectedElementIds([firstPresetId]);
-      }
     };
     reader.readAsDataURL(file);
     event.target.value = "";
@@ -2585,7 +3198,10 @@ export default function TemplatesView({
     resetToCreateMode();
   }
 
-  const canvasElements = [...form.design.canvas.elements].sort((left, right) => left.zIndex - right.zIndex);
+  const canvasElements = useMemo(
+    () => [...visibleCanvasElements].sort((left, right) => left.zIndex - right.zIndex),
+    [visibleCanvasElements],
+  );
   const selectedElementIdSet = new Set(selectedElementIds);
   const selectedElement = canvasElements.find((element) => element.id === selectedElementId) || null;
   const hasCanvasElements = canvasElements.length > 0;
@@ -2670,13 +3286,44 @@ export default function TemplatesView({
             </label>
             <label>
               Template type
-              <input
-                required
-                type="text"
-                value={form.type}
-                onChange={(event) => updateField("type", event.target.value)}
-                placeholder="Certificate / Notice / Offer"
-              />
+              <select required value={form.type} onChange={(event) => updateField("type", event.target.value)}>
+                <option value="">Select template type</option>
+                {templateTypeOptions.map((type) => (
+                  <option key={type.id || type.code} value={type.name}>
+                    {type.name}
+                  </option>
+                ))}
+              </select>
+              <div className="template-type-manager">
+                <input
+                  type="text"
+                  value={newTemplateTypeName}
+                  onChange={(event) => setNewTemplateTypeName(event.target.value)}
+                  placeholder="Create type"
+                />
+                <button className="button button-secondary" type="button" onClick={handleAddTemplateType} disabled={!newTemplateTypeName.trim()}>
+                  Add
+                </button>
+                <button
+                  className="button button-secondary button-danger"
+                  type="button"
+                  onClick={handleDeleteSelectedTemplateType}
+                  disabled={!selectedTemplateType?.id}
+                >
+                  Delete
+                </button>
+              </div>
+            </label>
+            <label>
+              Page size
+              <select value={activePageSize} onChange={(event) => updateDesign("pageSize", event.target.value)}>
+                <option value="A4">Letter = A4 - 210 x 297 mm - Standard office documents, letters</option>
+                <option value="LEGAL">AG = Legal - 8.5 x 14 inches (216 x 356 mm) - Agreements, contracts, legal documents</option>
+              </select>
+            </label>
+            <label>
+              Total pages
+              <input type="number" min="1" max="50" value={totalTemplatePages} onChange={(event) => updateDesign("additionalPages", clamp(Number(event.target.value), 1, 50))} />
             </label>
             <label className="span-2">
               Default subject
@@ -2731,8 +3378,23 @@ export default function TemplatesView({
                   <h3>Clean mode</h3>
                 </div>
               </div>
+              <div className="button-row" style={{ marginBottom: 12 }}>
+                {templatePageIndexes.map((pageIndex) => (
+                  <button
+                    key={`page-tab-${pageIndex + 1}`}
+                    className={`button ${activeEditorPageIndex === pageIndex ? "button-primary" : "button-secondary"}`}
+                    type="button"
+                    onClick={() => {
+                      setActiveEditorPageIndex(pageIndex);
+                      clearCanvasSelection();
+                    }}
+                  >
+                    Page {pageIndex + 1}
+                  </button>
+                ))}
+              </div>
               <p className="template-builder-launcher__copy">
-                Use Full Editor for large A4 editing (Canva-style). Advanced inline controls stay hidden unless you need them.
+                Use Full Editor for large page editing. The selected page tab controls which page gets its own elements.
               </p>
               <div className="button-row">
                 <button className="button button-primary" type="button" onClick={openFullscreenEditor}>
@@ -2756,80 +3418,90 @@ export default function TemplatesView({
                   <div
                     className="template-mini-preview__zoom-layer"
                     style={{
-                      width: `${A4_CANVAS_WIDTH * MINI_PREVIEW_SCALE}px`,
-                      height: `${A4_CANVAS_HEIGHT * MINI_PREVIEW_SCALE}px`,
+                      width: `${canvasWidth * MINI_PREVIEW_SCALE}px`,
+                      height: `${(canvasHeight * totalTemplatePages + Math.max(0, totalTemplatePages - 1) * 24) * MINI_PREVIEW_SCALE}px`,
+                      display: "grid",
+                      gap: `${24 * MINI_PREVIEW_SCALE}px`,
                     }}
                   >
-                    <div
-                      className="template-canvas template-canvas--fullscreen template-canvas--mini"
-                      style={{
-                        transform: `scale(${MINI_PREVIEW_SCALE})`,
-                        transformOrigin: "top left",
-                      }}
-                    >
-                      {form.design.backgroundImage.dataUrl ? (
-                        <img
-                          className="template-canvas__bg"
-                          src={form.design.backgroundImage.dataUrl}
-                          alt="Template background preview"
-                          style={{
-                            objectFit: form.design.backgroundImage.fit,
-                            opacity: form.design.backgroundImage.opacity / 100,
-                          }}
-                        />
-                      ) : null}
-                      <div className="template-canvas__content-layer template-canvas__content-layer--preview" style={canvasContentLayerStyle}>
-                        {canvasElements.map((element) => (
-                          <div
-                            key={`mini-element-${element.id}`}
-                            className={`canvas-element canvas-element--${element.type} canvas-element--mini`}
+                    {templatePageIndexes.map((pageIndex) => (
+                      <div
+                        key={`mini-page-${pageIndex + 1}`}
+                        className="template-canvas template-canvas--fullscreen template-canvas--mini"
+                        style={{
+                          width: `${canvasWidth}px`,
+                          height: `${canvasHeight}px`,
+                          minHeight: `${canvasHeight}px`,
+                          transform: `scale(${MINI_PREVIEW_SCALE})`,
+                          transformOrigin: "top left",
+                        }}
+                      >
+                        {form.design.backgroundImage.dataUrl ? (
+                          <img
+                            className="template-canvas__bg"
+                            src={form.design.backgroundImage.dataUrl}
+                            alt="Template background preview"
                             style={{
-                              left: `${element.x}%`,
-                              top: `${element.y}%`,
-                              width: `${element.width}%`,
-                              height: `${element.height}%`,
-                              zIndex: element.zIndex,
-                              color: element.color,
-                              backgroundColor: element.type === "text" || element.type === "field" ? "transparent" : element.backgroundColor,
-                              borderColor: element.borderColor,
-                              borderWidth: `${element.borderWidth}px`,
-                              fontSize: `${element.fontSize}px`,
-                              fontFamily: element.fontFamily || "inherit",
-                              fontWeight: element.fontWeight,
-                              textDecoration: element.textDecoration || "none",
-                              textAlign: element.align || "left",
-                              lineHeight: Number(element.lineHeight ?? 1.35),
-                              letterSpacing: `${Number(element.letterSpacing ?? 0)}px`,
-                              opacity: element.opacity / 100,
-                              padding:
-                                element.type === "text" || element.type === "field"
-                                  ? `${Number(element.paddingY ?? 4)}px ${Number(element.paddingX ?? 6)}px`
-                                  : undefined,
+                              objectFit: form.design.backgroundImage.fit,
+                              opacity: form.design.backgroundImage.opacity / 100,
                             }}
-                          >
-                            {element.type === "line" ? (
-                              <span
-                                className="canvas-line"
-                                style={{
-                                  backgroundColor: element.color,
-                                  height: `${getLineStrokeWidth(element)}px`,
-                                }}
-                              />
-                            ) : null}
-                            {element.type === "text" ? (
-                              <span className="canvas-element__text-content">
-                                {renderEditorMarkdownBlocks(element.text || "Text", `mini-${element.id}`)}
-                              </span>
-                            ) : null}
-                            {element.type === "field" ? (
-                              <span className="canvas-field-chip">
-                                {(element.text || "Field").trim()}: {`{{${element.fieldKey || "recipient_name"}}}`}
-                              </span>
-                            ) : null}
-                          </div>
-                        ))}
+                          />
+                        ) : null}
+                        <div className="template-canvas__content-layer template-canvas__content-layer--preview" style={canvasContentLayerStyle}>
+                          {allCanvasElements
+                            .filter((element) => Number(element.pageIndex || 0) === pageIndex)
+                            .map((element) => (
+                            <div
+                              key={`mini-page-${pageIndex + 1}-element-${element.id}`}
+                              className={`canvas-element canvas-element--${element.type} canvas-element--mini`}
+                              style={{
+                                left: `${element.x}%`,
+                                top: `${element.y}%`,
+                                width: `${element.width}%`,
+                                height: `${element.height}%`,
+                                zIndex: element.zIndex,
+                                color: element.color,
+                                backgroundColor: element.type === "text" || element.type === "field" ? "transparent" : element.backgroundColor,
+                                borderColor: element.borderColor,
+                                borderWidth: `${element.borderWidth}px`,
+                                fontSize: `${element.fontSize}px`,
+                                fontFamily: element.fontFamily || "inherit",
+                                fontWeight: element.fontWeight,
+                                textDecoration: element.textDecoration || "none",
+                                textAlign: element.align || "left",
+                                lineHeight: Number(element.lineHeight ?? 1.35),
+                                letterSpacing: `${Number(element.letterSpacing ?? 0)}px`,
+                                opacity: element.opacity / 100,
+                                padding:
+                                  element.type === "text" || element.type === "field"
+                                    ? `${Number(element.paddingY ?? 4)}px ${Number(element.paddingX ?? 6)}px`
+                                    : undefined,
+                              }}
+                            >
+                              {element.type === "line" ? (
+                                <span
+                                  className="canvas-line"
+                                  style={{
+                                    backgroundColor: element.color,
+                                    height: `${getLineStrokeWidth(element)}px`,
+                                  }}
+                                />
+                              ) : null}
+                              {element.type === "text" ? (
+                                <span className="canvas-element__text-content">
+                                  {renderEditorMarkdownBlocks(element.text || "Text", `mini-${pageIndex}-${element.id}`)}
+                                </span>
+                              ) : null}
+                              {element.type === "field" ? (
+                                <span className="canvas-field-chip">
+                                  {(element.text || "Field").trim()}: {`{{${element.fieldKey || "recipient_name"}}}`}
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -2906,6 +3578,14 @@ export default function TemplatesView({
                     onChange={(event) => updateDesign("showSignatureLine", event.target.checked)}
                   />
                   <span>Show signature blocks</span>
+                </label>
+                <label className="checkbox-field span-2">
+                  <input
+                    type="checkbox"
+                    checked={form.design.showStructuredShell !== false}
+                    onChange={(event) => updateDesign("showStructuredShell", event.target.checked)}
+                  />
+                  <span>Show automatic header, meta, recipient, and footer blocks (structured mode)</span>
                 </label>
                 <label className="checkbox-field span-2">
                   <input
@@ -3087,6 +3767,32 @@ export default function TemplatesView({
                 </div>
               </div>
             </div>
+
+            {detectedDynamicTokenFields.length ? (
+              <div className="design-settings span-2">
+                <div className="design-settings__header">
+                  <div>
+                    <p className="eyebrow">Detected Placeholders</p>
+                    <h3>Mark placeholders as required</h3>
+                  </div>
+                </div>
+                <div className="custom-fields-grid">
+                  {detectedDynamicTokenFields.map((field) => (
+                    <article key={field.key} className="custom-field-card">
+                      <p><strong>{field.label}</strong> <code>{field.token}</code></p>
+                      <label className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={requiredTokenKeySet.has(field.key)}
+                          onChange={(event) => toggleRequiredToken(field.key, event.target.checked)}
+                        />
+                        <span>Required in Issue Letter form</span>
+                      </label>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="background-uploader span-2">
               <div className="background-uploader__header">
@@ -3882,6 +4588,9 @@ export default function TemplatesView({
               </button>
               {editingTemplateId ? (
                 <>
+                  <button className="button button-secondary" type="button" onClick={handleSaveAsTemplate}>
+                    Save As
+                  </button>
                   <button className="button button-secondary" type="button" onClick={() => resetToCreateMode()}>
                     Cancel edit
                   </button>
@@ -3927,7 +4636,7 @@ export default function TemplatesView({
           </div>
         </article>
 
-        <article className="panel">
+        <article className="panel panel-template-library">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Library</p>
@@ -3936,23 +4645,95 @@ export default function TemplatesView({
             {templates.length ? (
               <div className="row-actions">
                 <button className="button button-secondary" type="button" onClick={toggleSelectAllTemplates}>
-                  {selectedTemplateIds.length === templates.length ? "Clear all" : "Select all"}
+                  {filteredTemplates.length && selectedFilteredTemplateIds.length === filteredTemplates.length ? "Clear all" : "Select all"}
                 </button>
                 <button
                   className="button button-secondary"
                   type="button"
                   onClick={handleBulkDeleteSelection}
-                  disabled={!selectedTemplateIds.length}
+                  disabled={!selectedFilteredTemplateIds.length}
                 >
-                  Delete selected ({selectedTemplateIds.length})
+                  Delete selected ({selectedFilteredTemplateIds.length})
                 </button>
               </div>
             ) : null}
           </div>
 
           {templates.length ? (
+            <div className="template-library-toolbar">
+              <div className="template-library-filters">
+                <label className="template-library-search">
+                  Search template
+                  <input
+                    type="search"
+                    value={templateSearchTerm}
+                    onChange={(event) => setTemplateSearchTerm(event.target.value)}
+                    placeholder="Name, type, subject, company..."
+                  />
+                </label>
+                <label>
+                  Company
+                  <select
+                    value={templateListCompanyFilter}
+                    onChange={(event) => {
+                      setTemplateListCompanyFilter(event.target.value);
+                      setTemplateListDepartmentFilter("ALL");
+                    }}
+                  >
+                    <option value="ALL">All companies</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>{company.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Department
+                  <select value={templateListDepartmentFilter} onChange={(event) => setTemplateListDepartmentFilter(event.target.value)}>
+                    <option value="ALL">All departments</option>
+                    {templateListDepartmentOptions.map((department) => {
+                      const company = companies.find((item) => item.id === department.companyId);
+                      return (
+                        <option key={department.id} value={department.id}>
+                          {department.name}{templateListCompanyFilter === "ALL" && company?.name ? ` - ${company.name}` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                <label>
+                  Letter / AG
+                  <select value={templateListTypeFilter} onChange={(event) => setTemplateListTypeFilter(event.target.value)}>
+                    <option value="ALL">All types</option>
+                    {ISSUE_LETTER_TYPE_OPTIONS.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="template-library-toolbar__meta">
+                <span className="template-library-count">
+                  Showing {filteredTemplates.length} of {templates.length}
+                </span>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={resetTemplateLibraryFilters}
+                  disabled={
+                    templateSearchTerm.trim().length === 0 &&
+                    templateListCompanyFilter === "ALL" &&
+                    templateListDepartmentFilter === "ALL" &&
+                    templateListTypeFilter === "ALL"
+                  }
+                >
+                  Reset filters
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {templates.length && filteredTemplates.length ? (
             <div className="card-list">
-              {templates.map((template) => {
+              {filteredTemplates.map((template) => {
                 const company = companies.find((item) => item.id === template.companyId);
                 const department = departments.find((item) => item.id === template.departmentId);
                 const isSelected = selectedTemplateIds.includes(template.id);
@@ -4006,6 +4787,8 @@ export default function TemplatesView({
                 );
               })}
             </div>
+          ) : templates.length ? (
+            <EmptyState message="No templates found for this filter." />
           ) : (
             <EmptyState message="Templates will appear here after you create the first one." />
           )}
@@ -4013,14 +4796,58 @@ export default function TemplatesView({
       </div>
 
       {isFullscreenEditorOpen ? (
-        <div className="editor-modal-backdrop" onClick={closeFullscreenEditor}>
-          <div className="editor-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="editor-modal-backdrop editor-fullscreen-page">
+          <div className="editor-modal" role="dialog" aria-modal="true">
             <div className="editor-modal__header">
-              <div>
+              <div className="editor-modal__titleblock">
                 <p className="eyebrow">Canvas Editor</p>
-                <h3>Full Editor (A4)</h3>
+                <h3>Full Editor ({activePageSize}) - Page {activeEditorPageIndex + 1}</h3>
               </div>
-              <div className="editor-modal__zoom">
+              <div className="editor-modal__statusbar">
+                <span className="editor-chip">{totalTemplatePages} page{totalTemplatePages === 1 ? "" : "s"}</span>
+                <span className="editor-chip">{activePageSize}</span>
+                {isCanvasPanMode ? <span className="editor-chip">Hand Tool On</span> : null}
+                <span className="editor-modal__hint">Ctrl + Wheel zooms. Space + drag (or middle mouse) pans. Press H for Hand Tool.</span>
+                <button className="button button-secondary" type="button" onClick={closeFullscreenEditor}>
+                  Back to templates
+                </button>
+              </div>
+            </div>
+
+            <div className="editor-modal__toolbar">
+              <div className="editor-toolbar-group">
+                <span className="editor-toolbar-label">Quick edit</span>
+                <button className="button button-secondary" type="button" onClick={addEditorPage}>
+                  Add Page
+                </button>
+                <button className="button button-secondary" type="button" onClick={() => addCanvasElement("text")}>
+                  Add Text
+                </button>
+                <button className="button button-secondary" type="button" onClick={handleUndoCanvas} disabled={!canUndoCanvas}>
+                  Undo
+                </button>
+                <button className="button button-secondary" type="button" onClick={handleRedoCanvas} disabled={!canRedoCanvas}>
+                  Redo
+                </button>
+                <button className="button button-secondary" type="button" onClick={copySelectedElement} disabled={!selectedElement}>
+                  Copy
+                </button>
+                <button className="button button-secondary" type="button" onClick={duplicateSelectedElement} disabled={!selectedElement}>
+                  Duplicate
+                </button>
+                <button
+                  className={`button ${isCanvasPanMode ? "button-primary" : "button-secondary"}`}
+                  type="button"
+                  onClick={() => {
+                    stopViewportPan();
+                    setIsCanvasPanMode((current) => !current);
+                  }}
+                >
+                  Hand Tool (H)
+                </button>
+              </div>
+              <div className="editor-toolbar-group editor-toolbar-group--zoom">
+                <span className="editor-toolbar-label">Zoom</span>
                 <button className="button button-secondary" type="button" onClick={() => applyEditorZoom(editorZoomPercent - 10)}>
                   -
                 </button>
@@ -4039,101 +4866,119 @@ export default function TemplatesView({
                 <button className="button button-secondary" type="button" onClick={fitEditorToWidth}>
                   Fit Width
                 </button>
+                <button className="button button-secondary" type="button" onClick={fitEditorToHeight}>
+                  Fit Height
+                </button>
                 <button className="button button-secondary" type="button" onClick={fitEditorToPage}>
                   Fit Page
                 </button>
-                <span className="editor-modal__hint">Ctrl + Wheel = Zoom | Ctrl/Cmd + Click = Multi-select | Shift + Drag/Resize = Lock axis | Ctrl+Z/Y = Undo/Redo | Ctrl+C/V = Copy/Paste | Ctrl+D = Duplicate | Ctrl+B/U/I = Text style</span>
-                <button className="button button-secondary" type="button" onClick={closeFullscreenEditor}>
-                  Close
-                </button>
               </div>
             </div>
 
-            <div className="editor-modal__toolbar">
-              <div className="canvas-toolbar__actions">
-                {ELEMENT_TYPES.map((type) => (
-                  <button
-                    key={`modal-${type.value}`}
-                    className="button button-secondary"
-                    type="button"
-                    onClick={() => addCanvasElement(type.value)}
-                  >
-                    Add {type.label}
-                  </button>
-                ))}
-                <button className="button button-secondary" type="button" onClick={applyBackgroundTextPreset}>
-                  Auto Place Fields
+            <div className={`editor-modal__body editor-modal__body--studio ${isEditorInspectorOpen ? "has-inspector" : "is-inspector-closed"}`}>
+              <aside className={`editor-modal__rail ${isEditorSidebarCollapsed ? "is-collapsed" : ""}`}>
+                <button
+                  className="editor-rail__toggle"
+                  type="button"
+                  onClick={() => setIsEditorSidebarCollapsed((current) => !current)}
+                  aria-label={isEditorSidebarCollapsed ? "Open editor sidebar" : "Close editor sidebar"}
+                >
+                  {isEditorSidebarCollapsed ? ">" : "<"}
                 </button>
-              </div>
-              <div className="canvas-toolbar__actions">
-                <button className="button button-secondary" type="button" onClick={handleUndoCanvas} disabled={!canUndoCanvas}>
-                  Undo
-                </button>
-                <button className="button button-secondary" type="button" onClick={handleRedoCanvas} disabled={!canRedoCanvas}>
-                  Redo
-                </button>
-                <button className="button button-secondary" type="button" onClick={copySelectedElement} disabled={!selectedElement}>
-                  Copy
-                </button>
-                <button className="button button-secondary" type="button" onClick={duplicateSelectedElement} disabled={!selectedElement}>
-                  Duplicate
-                </button>
-                <button className="button button-secondary" type="button" onClick={pasteCopiedElement} disabled={!copiedCanvasElement}>
-                  Paste
-                </button>
-                <button className="button button-secondary" type="button" onClick={() => moveLayer("up")} disabled={!selectedElement}>
-                  Bring Front
-                </button>
-                <button className="button button-secondary" type="button" onClick={() => moveLayer("down")} disabled={!selectedElement}>
-                  Send Back
-                </button>
-                <button className="button button-secondary" type="button" onClick={clearCanvas}>
-                  Clear
-                </button>
-              </div>
-            </div>
+                <div className="editor-rail__nav">
+                  {[
+                    { key: "pages", label: "Pages" },
+                    { key: "insert", label: "Insert" },
+                    { key: "layers", label: "Layers" },
+                    { key: "document", label: "Document" },
+                    { key: "selection", label: "Selection" },
+                  ].map((section) => (
+                    <button
+                      key={section.key}
+                      type="button"
+                      className={`editor-rail__nav-btn ${activeEditorSidebarSection === section.key ? "is-active" : ""}`}
+                      onClick={() => {
+                        setActiveEditorSidebarSection(section.key);
+                        setIsEditorSidebarCollapsed(false);
+                        setIsEditorInspectorOpen(true);
+                      }}
+                    >
+                      {isEditorSidebarCollapsed ? section.label.slice(0, 1) : section.label}
+                    </button>
+                  ))}
+                </div>
+              </aside>
 
-            <div className="editor-modal__body">
-              <div className="editor-modal__canvas-panel">
-                <div className="fullscreen-canvas-viewport" ref={fullscreenViewportRef}>
+              <div className="editor-modal__workspace">
+                <div className="editor-modal__canvas-panel">
+                <div
+                  className={`fullscreen-canvas-viewport ${isCanvasPanMode ? "is-pan-mode" : ""} ${isCanvasPanning ? "is-panning" : ""}`}
+                  ref={fullscreenViewportRef}
+                  onPointerDown={handleViewportPointerDown}
+                  onPointerMove={handleViewportPointerMove}
+                  onPointerUp={stopViewportPan}
+                  onPointerCancel={stopViewportPan}
+                  onPointerLeave={stopViewportPan}
+                >
                   <div
                     className="fullscreen-canvas-zoom-layer"
                     style={{
-                      width: `${A4_CANVAS_WIDTH * editorZoomScale}px`,
-                      height: `${A4_CANVAS_HEIGHT * editorZoomScale}px`,
+                      width: `${canvasWidth}px`,
+                      height: `${canvasHeight * totalTemplatePages + Math.max(0, totalTemplatePages - 1) * 32}px`,
+                      display: "grid",
+                      gap: "32px",
+                      transform: `scale(${editorZoomScale})`,
+                      transformOrigin: "top center",
                     }}
                   >
-                    <div
-                      className="template-canvas template-canvas--fullscreen"
-                      onPointerDown={() => {
-                        clearCanvasSelection();
-                        closeInlineEditor(true);
-                        setAlignmentGuides({ vertical: null, horizontal: null });
-                      }}
-                      style={{
-                        transform: `scale(${editorZoomScale})`,
-                        transformOrigin: "top left",
-                      }}
-                    >
-                      {form.design.backgroundImage.dataUrl ? (
-                        <img
-                          className="template-canvas__bg"
-                          src={form.design.backgroundImage.dataUrl}
-                          alt="Template background"
-                          style={{
-                            objectFit: form.design.backgroundImage.fit,
-                            opacity: form.design.backgroundImage.opacity / 100,
-                          }}
-                        />
-                      ) : null}
-                      <div className="template-canvas__content-layer" ref={fullscreenCanvasRef} style={canvasContentLayerStyle}>
-                        {selectedElement && inlineToolbarStyle ? (
+                    {templatePageIndexes.map((pageIndex) => (
+                      (() => {
+                        const isActiveEditorPage = pageIndex === activeEditorPageIndex;
+                        return (
                           <div
-                            className="canvas-inline-toolbar"
-                            style={inlineToolbarStyle}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onMouseDown={(event) => event.preventDefault()}
+                            key={`editor-page-${pageIndex + 1}`}
+                            className={`template-canvas template-canvas--fullscreen ${isActiveEditorPage ? "is-active-page" : ""}`}
+                            onPointerDown={(event) => {
+                              if (isCanvasPanMode || event.button === 1) {
+                                return;
+                              }
+
+                              if (!isActiveEditorPage) {
+                                setActiveEditorPageIndex(pageIndex);
+                                setAlignmentGuides({ vertical: null, horizontal: null });
+                                return;
+                              }
+
+                              clearCanvasSelection();
+                              closeInlineEditor(true);
+                              setAlignmentGuides({ vertical: null, horizontal: null });
+                            }}
+                            style={{
+                              width: `${canvasWidth}px`,
+                              height: `${canvasHeight}px`,
+                              minHeight: `${canvasHeight}px`,
+                            }}
                           >
+                            <div className="template-canvas__page-badge">Page {pageIndex + 1}</div>
+                            {form.design.backgroundImage.dataUrl ? (
+                              <img
+                                className="template-canvas__bg"
+                                src={form.design.backgroundImage.dataUrl}
+                                alt="Template background"
+                                style={{
+                                  objectFit: form.design.backgroundImage.fit,
+                                  opacity: form.design.backgroundImage.opacity / 100,
+                                }}
+                              />
+                            ) : null}
+                            <div className="template-canvas__content-layer" ref={isActiveEditorPage ? fullscreenCanvasRef : undefined} style={canvasContentLayerStyle}>
+                          {isActiveEditorPage && selectedElement && inlineToolbarStyle ? (
+                            <div
+                              className="canvas-inline-toolbar"
+                              style={inlineToolbarStyle}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onMouseDown={(event) => event.preventDefault()}
+                            >
                             <div className="canvas-inline-toolbar__group">
                               <button className="canvas-inline-toolbar__btn" type="button" onClick={() => changeSelectedElementSize(-1, 0)} title="Width -">
                                 W-
@@ -4214,17 +5059,19 @@ export default function TemplatesView({
                                 Del
                               </button>
                             </div>
-                          </div>
-                        ) : null}
-                        {alignmentGuides.vertical != null ? (
-                          <span className="canvas-alignment-guide canvas-alignment-guide--vertical" style={{ left: `${alignmentGuides.vertical}%` }} />
-                        ) : null}
-                        {alignmentGuides.horizontal != null ? (
-                          <span className="canvas-alignment-guide canvas-alignment-guide--horizontal" style={{ top: `${alignmentGuides.horizontal}%` }} />
-                        ) : null}
-                        {canvasElements.map((element) => (
-                          <div
-                            key={`modal-element-${element.id}`}
+                            </div>
+                          ) : null}
+                          {isActiveEditorPage && alignmentGuides.vertical != null ? (
+                            <span className="canvas-alignment-guide canvas-alignment-guide--vertical" style={{ left: `${alignmentGuides.vertical}%` }} />
+                          ) : null}
+                          {isActiveEditorPage && alignmentGuides.horizontal != null ? (
+                            <span className="canvas-alignment-guide canvas-alignment-guide--horizontal" style={{ top: `${alignmentGuides.horizontal}%` }} />
+                          ) : null}
+                          {allCanvasElements
+                            .filter((element) => Number(element.pageIndex || 0) === pageIndex)
+                            .map((element) => (
+                            <div
+                              key={`modal-page-${pageIndex + 1}-element-${element.id}`}
                             className={`canvas-element canvas-element--${element.type} ${selectedElementIdSet.has(element.id) ? "is-selected" : ""}`}
                             style={{
                               left: `${element.x}%`,
@@ -4249,12 +5096,12 @@ export default function TemplatesView({
                                   ? `${Number(element.paddingY ?? 4)}px ${Number(element.paddingX ?? 6)}px`
                                   : undefined,
                               cursor:
-                                element.type === "text" && inlineTextEditElementId === element.id
+                                isActiveEditorPage && element.type === "text" && inlineTextEditElementId === element.id
                                   ? "text"
                                   : undefined,
                             }}
-                            onPointerDown={(event) => handleElementPointerDown(event, element, "drag")}
-                            onPointerUp={(event) => handleElementPointerUp(event, element)}
+                            onPointerDown={isActiveEditorPage ? (event) => handleElementPointerDown(event, element, "drag") : undefined}
+                            onPointerUp={isActiveEditorPage ? (event) => handleElementPointerUp(event, element) : undefined}
                           >
                             {element.type === "line" ? (
                               <span
@@ -4266,7 +5113,7 @@ export default function TemplatesView({
                               />
                             ) : null}
                             {element.type === "text" ? (
-                              inlineTextEditElementId === element.id ? (
+                              isActiveEditorPage && inlineTextEditElementId === element.id ? (
                                 <div
                                   ref={(node) => {
                                     setCanvasTextNodeRef(element.id, node);
@@ -4299,22 +5146,22 @@ export default function TemplatesView({
                                 <span
                                   ref={(node) => setCanvasTextNodeRef(element.id, node)}
                                   className="canvas-element__text-content"
-                                  onPointerUp={(event) => {
+                                  onPointerUp={isActiveEditorPage ? (event) => {
                                     event.stopPropagation();
                                     rememberCanvasTextSelection(element.id);
-                                  }}
-                                  onMouseUp={(event) => {
+                                  } : undefined}
+                                  onMouseUp={isActiveEditorPage ? (event) => {
                                     event.stopPropagation();
                                     rememberCanvasTextSelection(element.id);
-                                  }}
-                                onDoubleClick={(event) => {
+                                  } : undefined}
+                                onDoubleClick={isActiveEditorPage ? (event) => {
                                   event.stopPropagation();
                                   setSelectedElementId(element.id);
                                   setSelectedElementIds([element.id]);
                                   openInlineEditorAtPoint(element.id, event.clientX, event.clientY);
-                                }}
+                                } : undefined}
                               >
-                                  {renderEditorMarkdownBlocks(element.text || "Text", `modal-${element.id}`)}
+                                  {renderEditorMarkdownBlocks(element.text || "Text", `modal-${pageIndex}-${element.id}`)}
                                 </span>
                               )
                             ) : null}
@@ -4323,7 +5170,7 @@ export default function TemplatesView({
                                 {(element.text || "Field").trim()}: {`{{${element.fieldKey || "recipient_name"}}}`}
                               </span>
                             ) : null}
-                            {selectedElementId === element.id && element.type === "line" ? (
+                            {isActiveEditorPage && selectedElementId === element.id && element.type === "line" ? (
                               <>
                                 <button
                                   type="button"
@@ -4338,7 +5185,7 @@ export default function TemplatesView({
                                   aria-label="Resize line from end"
                                 />
                               </>
-                            ) : selectedElementId === element.id ? (
+                            ) : isActiveEditorPage && selectedElementId === element.id ? (
                               <button
                                 type="button"
                                 className="canvas-resize-handle"
@@ -4347,15 +5194,284 @@ export default function TemplatesView({
                               />
                             ) : null}
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                          ))}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ))}
                   </div>
                 </div>
               </div>
+              </div>
 
-              <aside className="editor-modal__side">
-                <h4>Quick Controls</h4>
+              {isEditorInspectorOpen ? (
+              <aside className="editor-modal__inspector">
+                <button
+                  className="editor-inspector__close"
+                  type="button"
+                  onClick={() => setIsEditorInspectorOpen(false)}
+                  aria-label="Close editor panel"
+                >
+                  X
+                </button>
+                {activeEditorSidebarSection === "pages" ? (
+                  <section className="editor-pane editor-pane--active">
+                    <div className="editor-pane__header">
+                      <div>
+                        <p className="eyebrow">Pages</p>
+                        <h4>Manage Pages</h4>
+                      </div>
+                      <span className="editor-count-badge">{totalTemplatePages}</span>
+                    </div>
+                    <div className="editor-sidebar-fields">
+                      <label>
+                        Template
+                        <input type="text" value={form.name || "Untitled template"} readOnly />
+                      </label>
+                      <label>
+                        Current page
+                        <select
+                          value={activeEditorPageIndex}
+                          onChange={(event) => {
+                            setActiveEditorPageIndex(Number(event.target.value) || 0);
+                            clearCanvasSelection();
+                            closeInlineEditor(true);
+                            setAlignmentGuides({ vertical: null, horizontal: null });
+                          }}
+                        >
+                          {templatePageIndexes.map((pageIndex) => (
+                            <option key={`sidebar-page-option-${pageIndex + 1}`} value={pageIndex}>
+                              Page {pageIndex + 1}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="editor-page-actions">
+                      <button className="button button-primary" type="button" onClick={addEditorPage}>
+                        Add Page
+                      </button>
+                      <button className="button button-secondary" type="button" onClick={() => duplicateEditorPage(activeEditorPageIndex)}>
+                        Duplicate Page
+                      </button>
+                    </div>
+                    <div className="editor-page-list">
+                      {templatePageIndexes.map((pageIndex) => {
+                        const pageElementCount = allCanvasElements.filter((element) => Number(element.pageIndex || 0) === pageIndex).length;
+                        const isActiveEditorPage = pageIndex === activeEditorPageIndex;
+
+                        return (
+                          <div className={`editor-page-card ${isActiveEditorPage ? "is-active" : ""}`} key={`sidebar-page-${pageIndex + 1}`}>
+                            <button
+                              className="editor-page-card__main"
+                              type="button"
+                              onClick={() => {
+                                setActiveEditorPageIndex(pageIndex);
+                                clearCanvasSelection();
+                                closeInlineEditor(true);
+                              }}
+                            >
+                              <span className="editor-page-card__thumb">
+                                <span className="editor-page-card__paper" />
+                              </span>
+                              <span className="editor-page-card__meta">
+                                <strong>Page {pageIndex + 1}</strong>
+                                <small>{pageElementCount} element{pageElementCount === 1 ? "" : "s"}</small>
+                              </span>
+                            </button>
+                            <button
+                              className="editor-page-card__delete"
+                              type="button"
+                              onClick={() => deleteEditorPage(pageIndex)}
+                              disabled={totalTemplatePages <= 1}
+                              title={totalTemplatePages <= 1 ? "At least one page is required" : `Delete page ${pageIndex + 1}`}
+                              aria-label={`Delete page ${pageIndex + 1}`}
+                            >
+                              Bin
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="editor-pane__note">Add blank pages like Canva. Each page keeps its own elements and can be deleted with the bin button.</p>
+                  </section>
+                ) : null}
+
+                {activeEditorSidebarSection === "insert" ? (
+                  <section className="editor-pane editor-pane--active">
+                    <div className="editor-pane__header">
+                      <div>
+                        <p className="eyebrow">Insert</p>
+                        <h4>Add Content</h4>
+                      </div>
+                    </div>
+                    <div className="editor-insert-grid">
+                      {ELEMENT_TYPES.map((type) => (
+                        <button
+                          key={`insert-panel-${type.value}`}
+                          className="button button-secondary"
+                          type="button"
+                          onClick={() => addCanvasElement(type.value)}
+                        >
+                          Add {type.label}
+                        </button>
+                      ))}
+                      <button className="button button-secondary" type="button" onClick={applyBackgroundTextPreset}>
+                        Auto Place Fields
+                      </button>
+                    </div>
+                    <div className="placeholder-picker">
+                      <p className="placeholder-picker__label">Dynamic values for selected text</p>
+                      <div className="placeholder-picker__grid" onMouseDown={keepInlineEditorFocused}>
+                        {canvasFieldOptions.map((option) => (
+                          <button
+                            key={`insert-token-${option.key}`}
+                            className="button button-secondary"
+                            type="button"
+                            onClick={() => appendTokenToSelectedText(option.token)}
+                          >
+                            {option.token}
+                          </button>
+                        ))}
+                        <button className="button button-secondary" type="button" onClick={() => appendTokenToSelectedText("\n")}>New Line</button>
+                        <button className="button button-secondary" type="button" onClick={() => appendTokenToSelectedText("  ")}>Double Space</button>
+                        <button className="button button-secondary" type="button" onClick={removeSelectedTextLine}>Remove Last Line</button>
+                      </div>
+                    </div>
+                    <p className="editor-pane__note">Select a text element first, then click a token to insert it into that text.</p>
+                  </section>
+                ) : null}
+
+                {activeEditorSidebarSection === "layers" ? (
+                  <section className="editor-pane editor-pane--active">
+                    <div className="editor-pane__header">
+                      <div>
+                        <p className="eyebrow">Layers</p>
+                        <h4>Page {activeEditorPageIndex + 1} Layers</h4>
+                      </div>
+                      <span className="editor-count-badge">{canvasElements.length}</span>
+                    </div>
+                    {canvasElements.length ? (
+                      <div className="canvas-elements-list__grid">
+                        {canvasElements.map((element, index) => (
+                          <button
+                            key={`layer-${element.id}`}
+                            className={`canvas-elements-list__item ${selectedElementId === element.id ? "is-active" : ""}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedElementId(element.id);
+                              setSelectedElementIds([element.id]);
+                            }}
+                          >
+                            {getElementLabel(element, index)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="canvas-properties__empty">This page has no elements yet. Use Insert to add text, fields, boxes, or lines.</p>
+                    )}
+                    <div className="editor-page-actions">
+                      <button className="button button-secondary" type="button" onClick={() => moveLayer("up")} disabled={!selectedElement}>
+                        Bring Front
+                      </button>
+                      <button className="button button-secondary" type="button" onClick={() => moveLayer("down")} disabled={!selectedElement}>
+                        Send Back
+                      </button>
+                      <button className="button button-secondary" type="button" onClick={removeSelectedElement} disabled={!selectedElement}>
+                        Delete Layer
+                      </button>
+                    </div>
+                  </section>
+                ) : null}
+
+                {activeEditorSidebarSection === "document" ? (
+                <section className="editor-pane editor-pane--active">
+                  <div className="editor-pane__header">
+                    <div>
+                      <p className="eyebrow">Document</p>
+                      <h4>Page Settings</h4>
+                    </div>
+                  </div>
+                  <div className="canvas-properties__form canvas-properties__form--compact">
+                    <label className="span-2">
+                      Page size
+                      <select value={activePageSize} onChange={(event) => updateDesign("pageSize", event.target.value)}>
+                        <option value="A4">Letter = A4 - 210 x 297 mm - Standard office documents, letters</option>
+                        <option value="LEGAL">AG = Legal - 8.5 x 14 inches (216 x 356 mm) - Agreements, contracts, legal documents</option>
+                      </select>
+                    </label>
+                    <label>
+                      Total pages
+                      <input
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={totalTemplatePages}
+                        onChange={(event) => {
+                          const nextTotal = clamp(Number(event.target.value), 1, 50);
+                          if (nextTotal > totalTemplatePages) {
+                            updateDesign("additionalPages", nextTotal);
+                            return;
+                          }
+                          if (nextTotal < totalTemplatePages) {
+                            deleteEditorPage(totalTemplatePages - 1);
+                          }
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Page padding X (%)
+                      <input
+                        type="number"
+                        min="0"
+                        max="25"
+                        step="0.5"
+                        value={canvasPaddingXPercent}
+                        onChange={(event) => updateDesign("pagePaddingX", clamp(Number(event.target.value), 0, 25))}
+                      />
+                    </label>
+                    <label>
+                      Page padding Y (%)
+                      <input
+                        type="number"
+                        min="0"
+                        max="25"
+                        step="0.5"
+                        value={canvasPaddingYPercent}
+                        onChange={(event) => updateDesign("pagePaddingY", clamp(Number(event.target.value), 0, 25))}
+                      />
+                    </label>
+                    <label>
+                      Background fit
+                      <select value={form.design.backgroundImage.fit} onChange={(event) => updateBackground("fit", event.target.value)}>
+                        <option value="cover">Cover</option>
+                        <option value="contain">Contain</option>
+                        <option value="fill">Fill</option>
+                      </select>
+                    </label>
+                    <label className="span-2">
+                      Background opacity
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={form.design.backgroundImage.opacity}
+                        onChange={(event) => updateBackground("opacity", clamp(Number(event.target.value), 0, 100))}
+                      />
+                    </label>
+                  </div>
+                </section>
+                ) : null}
+
+                {activeEditorSidebarSection === "selection" ? (
+                <section className="editor-pane editor-pane--active">
+                  <div className="editor-pane__header">
+                    <div>
+                      <p className="eyebrow">Selection</p>
+                      <h4>{selectedElement ? "Element Properties" : "Nothing Selected"}</h4>
+                    </div>
+                  </div>
                 {selectedElement ? (
                   <div className="canvas-properties__form">
                     <label>
@@ -4400,28 +5516,6 @@ export default function TemplatesView({
                         step="0.1"
                         value={selectedElement.height.toFixed(1)}
                         onChange={(event) => updateSelectedElement({ height: clamp(Number(event.target.value), 0.8, 100 - selectedElement.y) })}
-                      />
-                    </label>
-                    <label>
-                      Page padding X (%)
-                      <input
-                        type="number"
-                        min="0"
-                        max="25"
-                        step="0.5"
-                        value={canvasPaddingXPercent}
-                        onChange={(event) => updateDesign("pagePaddingX", clamp(Number(event.target.value), 0, 25))}
-                      />
-                    </label>
-                    <label>
-                      Page padding Y (%)
-                      <input
-                        type="number"
-                        min="0"
-                        max="25"
-                        step="0.5"
-                        value={canvasPaddingYPercent}
-                        onChange={(event) => updateDesign("pagePaddingY", clamp(Number(event.target.value), 0, 25))}
                       />
                     </label>
                     <label>
@@ -4721,25 +5815,10 @@ export default function TemplatesView({
                 ) : (
                   <p className="canvas-properties__empty">Select an element on canvas to edit position, text, and style.</p>
                 )}
-
-                {hasCanvasElements ? (
-                  <div className="canvas-elements-list">
-                    <p>Elements ({canvasElements.length})</p>
-                    <div className="canvas-elements-list__grid">
-                      {canvasElements.map((element, index) => (
-                        <button
-                          key={`modal-list-${element.id}`}
-                          type="button"
-                          className={`canvas-elements-list__item ${selectedElementIdSet.has(element.id) ? "is-active" : ""}`}
-                          onClick={(event) => handleElementListSelection(event, element.id)}
-                        >
-                          {getElementLabel(element, index)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                </section>
                 ) : null}
               </aside>
+              ) : null}
             </div>
           </div>
         </div>

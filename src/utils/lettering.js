@@ -1,6 +1,7 @@
 export const DEFAULT_TEMPLATE_DESIGN = {
   layout: "classic",
   renderMode: "standard",
+  showStructuredShell: true,
   accentColor: "#0c6b58",
   secondaryColor: "#c96a3d",
   titleText: "",
@@ -9,6 +10,8 @@ export const DEFAULT_TEMPLATE_DESIGN = {
   showDecorativeHeader: true,
   pagePaddingX: 0,
   pagePaddingY: 0,
+  pageSize: "A4",
+  additionalPages: 0,
   backgroundImage: {
     dataUrl: "",
     fileName: "",
@@ -19,9 +22,15 @@ export const DEFAULT_TEMPLATE_DESIGN = {
     elements: [],
   },
   customFields: [],
+  requiredTokenKeys: [],
 };
 
 export const DEFAULT_REFERENCE_PATTERN = "{{company_code}}/{{department_code}}/{{template_code}}/{{year}}-{{month}}/{{sequence3}}";
+
+export const ISSUE_LETTER_TYPE_OPTIONS = [
+  { value: "LETTER", label: "Letter" },
+  { value: "AG", label: "AG" },
+];
 
 export const LETTER_FIELD_OPTIONS = [
   { key: "letter_no", label: "Letter Number" },
@@ -286,6 +295,7 @@ function normalizeCanvasElement(element = {}, index = 0) {
 
   return {
     id,
+    pageIndex: Math.max(0, Math.floor(toNumber(element.pageIndex, 0))),
     type,
     x: clamp(toNumber(element.x, 12), 0, 100),
     y: clamp(toNumber(element.y, 8), 0, 100),
@@ -327,20 +337,33 @@ export function normalizeTemplateDesign(design = {}) {
     opacity: clamp(toNumber(sourceBackground.opacity, 100), 10, 100),
   };
   const customFields = normalizeTemplateCustomFields(merged.customFields);
+  const requiredTokenKeys = Array.isArray(merged.requiredTokenKeys)
+    ? Array.from(
+      new Set(
+        merged.requiredTokenKeys
+          .map((item) => normalizeCustomFieldKey(item, ""))
+          .filter(Boolean),
+      ),
+    )
+    : [];
 
   return {
     ...merged,
     renderMode,
+    showStructuredShell: merged.showStructuredShell !== false,
     pagePaddingX: clamp(toNumber(merged.pagePaddingX, 0), 0, 25),
     pagePaddingY: clamp(toNumber(merged.pagePaddingY, 0), 0, 25),
+    pageSize: String(merged.pageSize || "A4").toUpperCase() === "LEGAL" ? "LEGAL" : "A4",
+    additionalPages: clamp(toNumber(merged.additionalPages, 0), 0, 50),
     backgroundImage,
     canvas: {
       elements: canvasElements
         .map((element, index) => normalizeCanvasElement(element, index))
-        .sort((left, right) => left.zIndex - right.zIndex)
+        .sort((left, right) => (left.pageIndex - right.pageIndex) || (left.zIndex - right.zIndex))
         .map((element, index) => ({ ...element, zIndex: index })),
     },
     customFields,
+    requiredTokenKeys,
   };
 }
 
@@ -359,6 +382,63 @@ export function normalizeTemplate(template) {
     letterNoPattern: normalizeReferencePattern(template?.letterNoPattern),
     design: normalizeTemplateDesign(template?.design),
   };
+}
+
+export function normalizeIssueLetterType(value) {
+  const source = String(value || "");
+  const tokens = source
+    .trim()
+    .toUpperCase()
+    .match(/[A-Z0-9]+/g) || [];
+  const compact = tokens.join("");
+
+  return tokens.includes("AG")
+    || tokens.includes("AGREEMENT")
+    || tokens.includes("AGREEMENTS")
+    || tokens.includes("LEGAL")
+    || compact.startsWith("AGREEMENT")
+    || compact.includes("LEGAL")
+    ? "AG"
+    : "LETTER";
+}
+
+export function getRegisterNumberLabel(templateTypeName) {
+  const safeTypeName = String(templateTypeName || "").trim().replace(/\s+/g, " ");
+  if (!safeTypeName) {
+    return "Reference No";
+  }
+
+  const compactType = safeTypeName.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (compactType === "LETTER") {
+    return "Letter No";
+  }
+
+  if (compactType === "AG") {
+    return "AG No";
+  }
+
+  return `${safeTypeName} No`;
+}
+
+export function getDefaultPageSizeForIssueType(value) {
+  return normalizeIssueLetterType(value) === "AG" ? "LEGAL" : "A4";
+}
+
+export function normalizeTemplateDesignForIssueType(design, value) {
+  return {
+    ...normalizeTemplateDesign(design),
+    pageSize: getDefaultPageSizeForIssueType(value),
+  };
+}
+
+export function isAgTemplate(template) {
+  const source = `${template?.type || ""} ${template?.name || ""}`;
+  return normalizeIssueLetterType(source) === "AG";
+}
+
+export function templateMatchesIssueLetterType(template, letterType) {
+  const normalizedType = normalizeIssueLetterType(letterType);
+  return normalizedType === "AG" ? isAgTemplate(template) : !isAgTemplate(template);
 }
 
 export function resolveReferencePattern({ company, department, template, draftPattern }) {
@@ -530,6 +610,11 @@ function toReadableTokenLabel(tokenKey) {
 
 export function getTemplateDynamicTokenFields(template) {
   const normalizedTemplate = normalizeTemplate(template || {});
+  const requiredTokenKeys = new Set(
+    (normalizedTemplate?.design?.requiredTokenKeys || [])
+      .map((key) => normalizeCustomFieldKey(key, ""))
+      .filter(Boolean),
+  );
   const customFields = normalizeTemplateCustomFields(normalizedTemplate?.design?.customFields || []);
   const customKeys = new Set();
   customFields.forEach((field) => {
@@ -587,7 +672,7 @@ export function getTemplateDynamicTokenFields(template) {
         key: normalizedBaseKey,
         label: toReadableTokenLabel(normalizedBaseKey),
         token: `{{${token}}}`,
-        required: false,
+        required: requiredTokenKeys.has(normalizedBaseKey),
       });
     }
   });
@@ -636,10 +721,18 @@ export function buildLetterValueMap({ company, department, template, values }) {
   const valueMap = {
     letter_no: safeValues.letterNo || "",
     issue_date: formatDate(safeValues.issueDate || ""),
+    effective_date: formatDate(safeValues.issueDate || ""),
     subject: safeValues.subject || "",
     recipient_name: safeValues.recipientName || "",
     recipient_company: safeValues.recipientCompany || "",
     recipient_department: safeValues.recipientDepartment || "",
+    client_name: safeValues.recipientName || "",
+    client_company: safeValues.recipientCompany || "",
+    client_department: safeValues.recipientDepartment || "",
+    client_email: safeValues.employeeCompanyEmail || "",
+    client_phone: safeValues.employeePersonalPhone || "",
+    client_cnic: safeValues.employeeCnic || "",
+    client_address: employeeAddress,
     prepared_by: safeValues.preparedBy || "",
     approved_by: safeValues.approvedBy || "",
     remarks: safeValues.remarks || "",
@@ -647,7 +740,9 @@ export function buildLetterValueMap({ company, department, template, values }) {
     company_name: company?.name || "",
     company_code: companyCode,
     company_address: company?.address || "",
+    registered_address: company?.address || "",
     company_phone: company?.phone || "",
+    company_whatsapp: company?.phone || "",
     company_email: company?.email || "",
     company_footer: company?.footerText || "",
     department_name: department?.name || "",
@@ -837,6 +932,10 @@ export function createIssueDraft(data, currentDraft = {}) {
   const companies = data.companies || [];
   const departments = data.departments || [];
   const templates = (data.templates || []).map(normalizeTemplate);
+  const currentTemplate = templates.find((template) => template.id === currentDraft.templateId);
+  const letterType = Object.prototype.hasOwnProperty.call(currentDraft, "letterType")
+    ? normalizeIssueLetterType(currentDraft.letterType)
+    : normalizeIssueLetterType(currentTemplate?.type || currentTemplate?.name || "LETTER");
 
   const companyId = companies.some((company) => company.id === currentDraft.companyId)
     ? currentDraft.companyId
@@ -849,7 +948,7 @@ export function createIssueDraft(data, currentDraft = {}) {
 
   const templateOptions = templates.filter(
     (template) => template.companyId === companyId && template.departmentId === departmentId,
-  );
+  ).filter((template) => templateMatchesIssueLetterType(template, letterType));
   const templateId = templateOptions.some((template) => template.id === currentDraft.templateId)
     ? currentDraft.templateId
     : templateOptions[0]?.id || "";
@@ -878,7 +977,9 @@ export function createIssueDraft(data, currentDraft = {}) {
   return {
     companyId,
     departmentId,
+    letterType,
     templateId,
+    clientId: currentDraft.clientId || "",
     issueDate: currentDraft.issueDate || getTodayIso(),
     subject: currentDraft.subject || selectedTemplate?.defaultSubject || selectedTemplate?.name || "",
     recipientName: currentDraft.recipientName || "",
@@ -975,7 +1076,7 @@ export function createLetterRecord({ data, draft }) {
         defaultSubject: template.defaultSubject,
         bodyTemplate: template.bodyTemplate,
         letterNoPattern: template.letterNoPattern || "",
-        design: normalizeTemplateDesign(template.design),
+        design: normalizeTemplateDesignForIssueType(template.design, draft.letterType || template.type || template.name),
         customFieldValues: typeof draft.customFields === "object" && draft.customFields !== null ? draft.customFields : {},
         employeeData: {
           empId: draft.employeeEmpId || "",
@@ -1009,10 +1110,16 @@ export function buildLetterPreviewModel({ data, draft, previewLetterId }) {
     return null;
   }
 
+  const activeIssueType = currentLetter?.templateSnapshot?.type || draft.letterType || activeTemplate.type || activeTemplate.name;
+  const previewTemplate = {
+    ...activeTemplate,
+    design: normalizeTemplateDesignForIssueType(activeTemplate.design, activeIssueType),
+  };
+
   const patternInUse = resolveReferencePattern({
     company,
     department,
-    template: activeTemplate,
+    template: previewTemplate,
     draftPattern: currentLetter?.letterNoFormatOverride || draft.letterNoFormatOverride,
   });
 
@@ -1025,7 +1132,7 @@ export function buildLetterPreviewModel({ data, draft, previewLetterId }) {
           pattern: patternInUse,
           company,
           department,
-          template: activeTemplate,
+          template: previewTemplate,
           issueDate: draft.issueDate,
           sequence: overrideSequenceNumber,
         })
@@ -1033,7 +1140,7 @@ export function buildLetterPreviewModel({ data, draft, previewLetterId }) {
           sequences: data.sequences,
           company,
           department,
-          template: activeTemplate,
+          template: previewTemplate,
           issueDate: draft.issueDate,
           pattern: patternInUse,
         }));
@@ -1041,7 +1148,7 @@ export function buildLetterPreviewModel({ data, draft, previewLetterId }) {
   return {
     company,
     department,
-    template: activeTemplate,
+    template: previewTemplate,
     values: {
       ...draft,
       customFields:
@@ -1055,17 +1162,108 @@ export function buildLetterPreviewModel({ data, draft, previewLetterId }) {
 }
 
 export function buildRegisterRows(data) {
+  function resolveRegisterTemplateTypeName(letter, template) {
+    const source = [
+      letter?.templateSnapshot?.type,
+      template?.type,
+      letter?.legacyTemplateType,
+      letter?.templateSnapshot?.name,
+      template?.name,
+    ];
+
+    for (const value of source) {
+      const text = String(value || "").trim();
+      if (text) {
+        return text;
+      }
+    }
+
+    return "Template";
+  }
+
+  function buildRegisterCustomFieldValueMap(customFieldValues) {
+    const source = typeof customFieldValues === "object" && customFieldValues !== null ? customFieldValues : {};
+    const output = {};
+
+    Object.entries(source).forEach(([rawKey, rawValue]) => {
+      const keySource = String(rawKey || "").trim();
+      if (!keySource) {
+        return;
+      }
+
+      const normalizedKey = normalizeCustomFieldKey(keySource, keySource.toLowerCase());
+      if (!normalizedKey) {
+        return;
+      }
+
+      const textValue = String(rawValue ?? "");
+      output[normalizedKey] = textValue;
+
+      if (normalizedKey.startsWith("cf_")) {
+        const unprefixedKey = normalizedKey.slice(3);
+        if (unprefixedKey) {
+          output[unprefixedKey] = textValue;
+        }
+        return;
+      }
+
+      output[`cf_${normalizedKey}`] = textValue;
+    });
+
+    return output;
+  }
+
   return data.letters
     .map((letter) => {
       const company = data.companies.find((item) => item.id === letter.companyId);
       const department = data.departments.find((item) => item.id === letter.departmentId);
       const template = data.templates.find((item) => item.id === letter.templateId);
+      const templateTypeName = resolveRegisterTemplateTypeName(letter, template);
+      const registerDesign = normalizeTemplateDesign(letter?.templateSnapshot?.design ?? template?.design ?? {});
+      const registerTemplate = {
+        id: letter?.templateSnapshot?.id || template?.id || "",
+        name: letter?.templateSnapshot?.name || template?.name || "",
+        type: templateTypeName,
+        bodyTemplate: letter?.templateSnapshot?.bodyTemplate || template?.bodyTemplate || "",
+        design: registerDesign,
+      };
+      const customFieldDefinitions = normalizeTemplateCustomFields(registerDesign?.customFields || []);
+      const tokenFieldDefinitions = getTemplateDynamicTokenFields(registerTemplate).map((field) => ({
+        key: field.key,
+        label: field.label,
+        required: Boolean(field.required),
+      }));
+      const customFieldMap = new Map();
+
+      customFieldDefinitions.forEach((field) => {
+        customFieldMap.set(field.key, { ...field });
+      });
+      tokenFieldDefinitions.forEach((field) => {
+        const current = customFieldMap.get(field.key);
+        if (current) {
+          if (field.required && !current.required) {
+            current.required = true;
+          }
+          return;
+        }
+
+        customFieldMap.set(field.key, field);
+      });
+      const registerCustomFields = Array.from(customFieldMap.values());
+      const registerCustomFieldValueMap = buildRegisterCustomFieldValueMap(
+        letter?.customFieldValues || letter?.templateSnapshot?.customFieldValues || {},
+      );
 
       return {
         id: letter.id,
         companyName: company?.name || "",
         departmentName: department?.name || "",
         templateName: letter.templateSnapshot?.name || template?.name || "",
+        templateTypeName,
+        registerTypeKey: normalizeCustomFieldKey(templateTypeName, "template"),
+        registerNumberLabel: getRegisterNumberLabel(templateTypeName),
+        registerCustomFields,
+        registerCustomFieldValueMap,
         ...letter,
       };
     })
