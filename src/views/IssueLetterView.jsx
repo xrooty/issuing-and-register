@@ -4,6 +4,7 @@ import {
   DEFAULT_REFERENCE_PATTERN,
   ISSUE_LETTER_TYPE_OPTIONS,
   formatDate,
+  getRegisterNumberLabel,
   getTemplateDynamicTokenFields,
   normalizeTemplateCustomFields,
   templateMatchesIssueLetterType,
@@ -62,6 +63,8 @@ export default function IssueLetterView({
     (template) => template.companyId === draft.companyId && template.departmentId === draft.departmentId,
   ).filter((template) => templateMatchesIssueLetterType(template, draft.letterType));
   const selectedTemplate = templateOptions.find((template) => template.id === draft.templateId) || null;
+  const selectedTemplateTypeName = String(selectedTemplate?.type || selectedTemplate?.name || draft.letterType || "").trim();
+  const manualNumberLabel = getRegisterNumberLabel(selectedTemplateTypeName || "Letter");
   const selectedClient = clients.find((client) => {
     if (client.id === (draft.clientId || "")) {
       return true;
@@ -485,12 +488,12 @@ export default function IssueLetterView({
             </div>
             {selectionWarning ? <p className="helper-note helper-note--warning span-2">{selectionWarning}</p> : null}
             <label className="span-2">
-              Letter no override (optional)
+              {manualNumberLabel} override (optional)
               <input
                 type="text"
                 value={draft.letterNoManual || ""}
                 onChange={(event) => updateField("letterNoManual", event.target.value)}
-                placeholder="Leave blank for auto numbering"
+                placeholder={`Leave blank for auto ${manualNumberLabel.toLowerCase()}`}
               />
             </label>
             <label className="span-2">

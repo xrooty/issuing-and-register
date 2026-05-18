@@ -9,9 +9,28 @@ const EMPTY_FIELD = {
   is_active: true,
   sort_order: 100,
 };
+const EMPTY_EDIT_DRAFT = {
+  field_key: "",
+  label: "",
+  input_type: "text",
+  options_csv: "",
+  is_required: false,
+  is_active: true,
+  sort_order: 100,
+};
+const FIELD_TYPES = ["text", "email", "textarea", "date", "select"];
+
+function toOptionsCsv(options) {
+  if (!Array.isArray(options)) {
+    return "";
+  }
+  return options.map((item) => String(item || "").trim()).filter(Boolean).join(", ");
+}
 
 export default function ClientFieldsAdminView({ permissions, clientFields, onAddClientField, onUpdateClientField, onDeleteClientField }) {
   const [draft, setDraft] = useState(EMPTY_FIELD);
+  const [editingFieldId, setEditingFieldId] = useState("");
+  const [editDraft, setEditDraft] = useState(EMPTY_EDIT_DRAFT);
   const canView = !!permissions?.view;
   const canCreate = !!permissions?.create;
   const canEdit = !!permissions?.edit;
@@ -35,25 +54,37 @@ export default function ClientFieldsAdminView({ permissions, clientFields, onAdd
     if (ok) setDraft(EMPTY_FIELD);
   }
 
-  async function editField(field) {
-    const nextLabel = window.prompt("Field label", field.label || "");
-    if (nextLabel == null) return;
-    const nextType = window.prompt("Field type (text,email,textarea,date,select)", field.input_type || "text");
-    if (nextType == null) return;
-    const currentOptions = Array.isArray(field.options_json) ? field.options_json.join(",") : "";
-    const nextOptions = window.prompt("Options (comma-separated, for select)", currentOptions);
-    if (nextOptions == null) return;
-    const nextSortRaw = window.prompt("Sort order", String(field.sort_order || 100));
-    if (nextSortRaw == null) return;
-    const nextRequiredRaw = window.prompt("Required? (yes/no)", field.is_required ? "yes" : "no");
-    if (nextRequiredRaw == null) return;
-    await onUpdateClientField(field.id, {
-      label: nextLabel,
-      input_type: nextType,
-      options_json: String(nextOptions).split(",").map((item) => item.trim()).filter(Boolean),
-      sort_order: Number(nextSortRaw || 100),
-      is_required: String(nextRequiredRaw).trim().toLowerCase() === "yes",
+  function startEdit(field) {
+    setEditingFieldId(field.id || "");
+    setEditDraft({
+      field_key: field.field_key || "",
+      label: field.label || "",
+      input_type: FIELD_TYPES.includes(field.input_type) ? field.input_type : "text",
+      options_csv: toOptionsCsv(field.options_json),
+      is_required: !!field.is_required,
+      is_active: field.is_active !== false,
+      sort_order: Number(field.sort_order || 100),
     });
+  }
+
+  function cancelEdit() {
+    setEditingFieldId("");
+    setEditDraft(EMPTY_EDIT_DRAFT);
+  }
+
+  async function saveEdit(field) {
+    const ok = await onUpdateClientField(field.id, {
+      field_key: editDraft.field_key,
+      label: editDraft.label,
+      input_type: editDraft.input_type,
+      options_json: String(editDraft.options_csv || "").split(",").map((item) => item.trim()).filter(Boolean),
+      sort_order: Number(editDraft.sort_order || 100),
+      is_required: !!editDraft.is_required,
+      is_active: !!editDraft.is_active,
+    });
+    if (ok) {
+      cancelEdit();
+    }
   }
 
   return (
@@ -85,25 +116,107 @@ export default function ClientFieldsAdminView({ permissions, clientFields, onAdd
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Key</th><th>Label</th><th>Type</th><th>Required</th><th>Active</th><th>System</th><th>Sort</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Key</th><th>Label</th><th>Type</th><th>Required</th><th>Active</th><th>System</th><th>Sort</th><th>Options</th><th>Actions</th></tr></thead>
           <tbody>
             {rows.map((field) => (
               <tr key={field.id}>
-                <td>{field.field_key}</td>
-                <td>{field.label}</td>
-                <td>{field.input_type}</td>
-                <td>{field.is_required ? "yes" : "no"}</td>
-                <td>{field.is_active ? "yes" : "no"}</td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <input
+                      className="table-input"
+                      value={editDraft.field_key}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, field_key: e.target.value }))}
+                    />
+                  ) : field.field_key}
+                </td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <input
+                      className="table-input"
+                      value={editDraft.label}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, label: e.target.value }))}
+                    />
+                  ) : field.label}
+                </td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <select
+                      className="table-input"
+                      value={editDraft.input_type}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, input_type: e.target.value }))}
+                    >
+                      {FIELD_TYPES.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  ) : field.input_type}
+                </td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <select
+                      className="table-input"
+                      value={editDraft.is_required ? "yes" : "no"}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, is_required: e.target.value === "yes" }))}
+                    >
+                      <option value="yes">yes</option>
+                      <option value="no">no</option>
+                    </select>
+                  ) : (field.is_required ? "yes" : "no")}
+                </td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <select
+                      className="table-input"
+                      value={editDraft.is_active ? "yes" : "no"}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, is_active: e.target.value === "yes" }))}
+                    >
+                      <option value="yes">yes</option>
+                      <option value="no">no</option>
+                    </select>
+                  ) : (field.is_active ? "yes" : "no")}
+                </td>
                 <td>{field.is_system ? "yes" : "no"}</td>
-                <td>{field.sort_order}</td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <input
+                      className="table-input"
+                      type="number"
+                      value={editDraft.sort_order}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, sort_order: e.target.value }))}
+                    />
+                  ) : field.sort_order}
+                </td>
+                <td>
+                  {editingFieldId === field.id ? (
+                    <input
+                      className="table-input"
+                      value={editDraft.options_csv}
+                      onChange={(e) => setEditDraft((current) => ({ ...current, options_csv: e.target.value }))}
+                      placeholder="high, medium, low"
+                    />
+                  ) : (Array.isArray(field.options_json) && field.options_json.length ? field.options_json.join(", ") : "-")}
+                </td>
                 <td>
                   <div className="row-actions">
-                    <button className="button button-secondary" type="button" disabled={!canEdit} onClick={() => onUpdateClientField(field.id, { is_active: !field.is_active })}>
-                      {field.is_active ? "Deactivate" : "Activate"}
-                    </button>
-                    <button className="button button-secondary" type="button" disabled={!canEdit} onClick={() => editField(field)}>
-                      Edit
-                    </button>
+                    {editingFieldId === field.id ? (
+                      <>
+                        <button className="button button-primary" type="button" disabled={!canEdit} onClick={() => saveEdit(field)}>
+                          Save
+                        </button>
+                        <button className="button button-secondary" type="button" onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="button button-secondary" type="button" disabled={!canEdit} onClick={() => onUpdateClientField(field.id, { is_active: !field.is_active })}>
+                          {field.is_active ? "Deactivate" : "Activate"}
+                        </button>
+                        <button className="button button-secondary" type="button" disabled={!canEdit} onClick={() => startEdit(field)}>
+                          Edit
+                        </button>
+                      </>
+                    )}
                     <button className="button button-secondary" type="button" disabled={!canDelete || field.is_system} onClick={() => onDeleteClientField(field.id)}>
                       Delete
                     </button>

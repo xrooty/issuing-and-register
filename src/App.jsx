@@ -478,30 +478,112 @@ function buildIssueDraftPatchFromClient(client) {
   if (!client) {
     return {};
   }
+  const sourceCustomFields = client.custom_fields_json && typeof client.custom_fields_json === "object"
+    ? client.custom_fields_json
+    : {};
+  const customFields = {};
+  const setCustomField = (fieldKey, fieldValue) => {
+    const key = String(fieldKey || "").trim();
+    const value = String(fieldValue || "").trim();
+    if (!key || !value) {
+      return;
+    }
+    customFields[key] = value;
+  };
+  const setCustomFieldAliases = (keys, fieldValue) => {
+    const value = String(fieldValue || "").trim();
+    if (!value) {
+      return;
+    }
+    keys.forEach((key) => setCustomField(key, value));
+  };
+  const compactTokenKey = (key) => String(key || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
   const recipientName = getClientValue(client, "client_name")
+    || getClientValue(client, "full_name")
     || getClientValue(client, "contact_name")
     || getClientValue(client, "display_name");
   const recipientCompany = getClientValue(client, "company")
-    || getClientValue(client, "employer_name");
-  const recipientDepartment = getClientValue(client, "designation")
-    || getClientValue(client, "department");
-  const email = getClientValue(client, "email") || getClientValue(client, "email_secondary");
-  const phone = getClientValue(client, "phone") || getClientValue(client, "whatsapp");
-  const cnic = getClientValue(client, "cnic");
+    || getClientValue(client, "employer_name")
+    || getClientValue(client, "business_name")
+    || getClientValue(client, "organization");
+  const recipientDepartment = getClientValue(client, "department")
+    || getClientValue(client, "designation")
+    || getClientValue(client, "job_title");
+  const employeeDesignation = getClientValue(client, "designation")
+    || getClientValue(client, "job_title")
+    || recipientDepartment;
+  const employeeDepartmentName = getClientValue(client, "department")
+    || recipientDepartment;
+  const email = getClientValue(client, "email")
+    || getClientValue(client, "email_secondary")
+    || getClientValue(client, "work_email")
+    || getClientValue(client, "company_email");
+  const phone = getClientValue(client, "phone")
+    || getClientValue(client, "mobile")
+    || getClientValue(client, "mobile_no")
+    || getClientValue(client, "whatsapp");
+  const cnic = getClientValue(client, "cnic")
+    || getClientValue(client, "national_id");
   const address = getClientValue(client, "address");
+  const employeeEmpId = getClientValue(client, "employee_id")
+    || getClientValue(client, "emp_id")
+    || getClientValue(client, "staff_id");
+  const employeeJoiningDate = getClientValue(client, "joining_date")
+    || getClientValue(client, "employee_joining_date");
+  const employeeReportingManager = getClientValue(client, "reporting_manager")
+    || getClientValue(client, "manager_name")
+    || getClientValue(client, "line_manager");
+
+  setCustomFieldAliases(["client_name", "clientname"], recipientName);
+  setCustomFieldAliases(["clientfathername", "client_father_name"], getClientValue(client, "father_name") || getClientValue(client, "client_father_name"));
+  setCustomFieldAliases(["client_cnic", "clientcnic"], cnic);
+  setCustomFieldAliases(["client_phone", "clientphone"], phone);
+  setCustomFieldAliases(["client_email", "clientemail"], email);
+  setCustomFieldAliases(["client_address", "clientaddress"], address);
+  setCustomFieldAliases(["clientbankname", "client_bank_name"], getClientValue(client, "bank_name"));
+  setCustomFieldAliases(["clientbankaccount_title", "client_bank_account_title"], getClientValue(client, "account_title"));
+  setCustomFieldAliases(["clientbankaccount", "client_bank_account"], getClientValue(client, "account_number"));
+  setCustomFieldAliases(["clientbankiban", "client_bank_iban"], getClientValue(client, "iban"));
+  setCustomFieldAliases(["clientnomineename", "client_nominee_name"], getClientValue(client, "nominee_name"));
+  setCustomFieldAliases(["clientnomineerelation", "client_nominee_relation"], getClientValue(client, "nominee_relation"));
+  setCustomFieldAliases(["clientnomineecnic", "client_nominee_cnic"], getClientValue(client, "nominee_cnic"));
+  setCustomFieldAliases(["clientnomineephone", "client_nominee_phone"], getClientValue(client, "nominee_phone"));
+  setCustomFieldAliases(["clientnomineeemail", "client_nominee_email"], getClientValue(client, "nominee_email"));
+  setCustomFieldAliases(["clientnomineeaddress", "client_nominee_address"], getClientValue(client, "nominee_address"));
+  setCustomFieldAliases(["effective_date"], getTodayIso());
+
+  Object.entries(sourceCustomFields).forEach(([rawKey, rawValue]) => {
+    const value = String(rawValue || "").trim();
+    if (!value) {
+      return;
+    }
+    const key = String(rawKey || "").trim();
+    if (!key) {
+      return;
+    }
+    setCustomField(key, value);
+    const compact = compactTokenKey(key);
+    if (compact && compact !== key.toLowerCase()) {
+      setCustomField(compact, value);
+    }
+  });
 
   return {
     recipientName,
     recipientCompany,
     recipientDepartment,
-    employeeFullName: recipientName,
+    employeeEmpId,
+    employeeFullName: getClientValue(client, "full_name") || recipientName,
     employeeCnic: cnic,
-    employeeDesignation: recipientDepartment,
-    employeeDepartmentName: recipientDepartment,
+    employeeDesignation,
+    employeeDepartmentName,
     employeePersonalPhone: phone,
     employeeCompanyEmail: email,
     employeeAddress: address,
+    employeeJoiningDate,
+    employeeReportingManager,
+    customFields,
   };
 }
 
@@ -1586,7 +1668,14 @@ export default function App() {
       if (Object.prototype.hasOwnProperty.call(patch, "clientId")) {
         const nextClient = data.clients.find((client) => client.id === (patch.clientId || ""));
         if (nextClient) {
-          Object.assign(nextRawDraft, buildIssueDraftPatchFromClient(nextClient));
+          const clientPatch = buildIssueDraftPatchFromClient(nextClient);
+          const mergedCustomFields = {
+            ...(current.customFields || {}),
+            ...(nextRawDraft.customFields || {}),
+            ...(clientPatch.customFields || {}),
+          };
+          Object.assign(nextRawDraft, clientPatch);
+          nextRawDraft.customFields = mergedCustomFields;
         }
       }
 
@@ -2266,7 +2355,28 @@ export default function App() {
     if (!existing) {
       return false;
     }
-    const normalized = normalizeClientFieldDraft({ ...existing, ...patch, id: existing.id, field_key: existing.field_key });
+    const normalized = normalizeClientFieldDraft({ ...existing, ...patch, id: existing.id });
+    const oldKey = existing.field_key;
+    const nextKey = normalized.field_key;
+    const keyChanged = oldKey !== nextKey;
+
+    if (!nextKey || !normalized.label) {
+      notify("Field key and label are required.");
+      return false;
+    }
+
+    if (keyChanged) {
+      const keyInUse = data.clientFields.some((field) => field.id !== existing.id && field.field_key === nextKey);
+      if (keyInUse) {
+        notify("Field key already exists.");
+        return false;
+      }
+      if (CLIENT_DB_FIELDS.has(oldKey) || CLIENT_DB_FIELDS.has(nextKey)) {
+        notify("Core client column keys cannot be renamed. Create a new custom key instead.");
+        return false;
+      }
+    }
+
     if (existing.is_system && (existing.field_key === "client_name" || existing.field_key === "email")) {
       if (normalized.is_active === false) {
         notify(`${existing.field_key} cannot be deactivated.`);
@@ -2278,9 +2388,48 @@ export default function App() {
       }
     }
     try {
+      const stagedClientCustomRows = [];
+      if (keyChanged) {
+        const hasMeaningfulValue = (value) => {
+          if (value == null) return false;
+          if (typeof value === "string") return Boolean(value.trim());
+          if (Array.isArray(value)) return value.length > 0;
+          if (typeof value === "object") return Object.keys(value).length > 0;
+          return true;
+        };
+        const clientsWithOldKey = (data.clients || []).filter((client) => {
+          const custom = client?.custom_fields_json;
+          return custom && typeof custom === "object" && Object.prototype.hasOwnProperty.call(custom, oldKey);
+        });
+
+        for (const client of clientsWithOldKey) {
+          const currentCustom = client.custom_fields_json && typeof client.custom_fields_json === "object"
+            ? client.custom_fields_json
+            : {};
+          const nextCustom = { ...currentCustom };
+          const oldValue = nextCustom[oldKey];
+          const hasNewKey = Object.prototype.hasOwnProperty.call(nextCustom, nextKey);
+          const shouldUseOldValue = !hasNewKey || !hasMeaningfulValue(nextCustom[nextKey]);
+          if (shouldUseOldValue) {
+            nextCustom[nextKey] = oldValue;
+          }
+
+          const stageResult = await supabase
+            .from("clients")
+            .update({
+              custom_fields_json: nextCustom,
+              updated_by: currentUserProfile?.id || null,
+            })
+            .eq("id", client.id);
+          ensureSupabaseSuccess(stageResult, `Client field key migration stage failed for ${oldKey}`);
+          stagedClientCustomRows.push({ id: client.id, custom_fields_json: nextCustom });
+        }
+      }
+
       const query = supabase
         .from("client_fields")
         .update({
+          field_key: normalized.field_key,
           label: normalized.label,
           input_type: normalized.input_type,
           options_json: normalized.options_json,
@@ -2290,9 +2439,30 @@ export default function App() {
         });
       const result = isUuid(fieldId) ? await query.eq("id", fieldId) : await query.eq("field_key", existing.field_key);
       ensureSupabaseSuccess(result, "Client field update failed");
-      await logActivity("UPDATE_CLIENT_FIELD", "client_fields", `Updated client field ${existing.field_key}`, { entityId: isUuid(fieldId) ? fieldId : null });
+
+      if (keyChanged) {
+        for (const stagedRow of stagedClientCustomRows) {
+          const cleanedCustom = { ...(stagedRow.custom_fields_json || {}) };
+          delete cleanedCustom[oldKey];
+          const cleanupResult = await supabase
+            .from("clients")
+            .update({
+              custom_fields_json: cleanedCustom,
+              updated_by: currentUserProfile?.id || null,
+            })
+            .eq("id", stagedRow.id);
+          ensureSupabaseSuccess(cleanupResult, `Client field key migration cleanup failed for ${oldKey}`);
+        }
+      }
+
+      await logActivity(
+        "UPDATE_CLIENT_FIELD",
+        "client_fields",
+        keyChanged ? `Renamed client field key ${oldKey} -> ${nextKey}` : `Updated client field ${existing.field_key}`,
+        { entityId: isUuid(fieldId) ? fieldId : null },
+      );
       await refreshData();
-      notify("Client field updated");
+      notify(keyChanged ? `Client field key renamed (${oldKey} -> ${nextKey})` : "Client field updated");
       return true;
     } catch (error) {
       notify(`Client field update failed: ${error.message}`);

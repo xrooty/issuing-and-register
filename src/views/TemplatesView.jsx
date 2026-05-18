@@ -90,6 +90,8 @@ const MINI_PREVIEW_SCALE = 0.34;
 const MAX_CANVAS_HISTORY = 200;
 const SNAP_THRESHOLD_PERCENT = 0.9;
 const DRAG_ACTIVATION_DISTANCE_PX = 4;
+const NUDGE_STEP_PERCENT = 0.25;
+const NUDGE_STEP_LARGE_PERCENT = 1;
 
 const BACKGROUND_TEXT_PRESET = [
   {
@@ -757,6 +759,7 @@ export default function TemplatesView({
   const [templateListTypeFilter, setTemplateListTypeFilter] = useState("ALL");
   const [templateListCompanyFilter, setTemplateListCompanyFilter] = useState("ALL");
   const [templateListDepartmentFilter, setTemplateListDepartmentFilter] = useState("ALL");
+  const [templateSearchTerm, setTemplateSearchTerm] = useState("");
   const [isFullscreenEditorOpen, setIsFullscreenEditorOpen] = useState(false);
   const [activeEditorPageIndex, setActiveEditorPageIndex] = useState(0);
   const [isEditorSidebarCollapsed, setIsEditorSidebarCollapsed] = useState(false);
@@ -768,6 +771,8 @@ export default function TemplatesView({
   const [showAdvancedBuilder, setShowAdvancedBuilder] = useState(false);
   const [copiedCanvasElement, setCopiedCanvasElement] = useState(null);
   const [alignmentGuides, setAlignmentGuides] = useState({ vertical: null, horizontal: null });
+  const [isCanvasPanMode, setIsCanvasPanMode] = useState(false);
+  const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const [customFieldDraft, setCustomFieldDraft] = useState(() => createCustomFieldDraft());
   const inlineCanvasRef = useRef(null);
   const fullscreenCanvasRef = useRef(null);
@@ -777,6 +782,7 @@ export default function TemplatesView({
   const textSelectionRef = useRef({ start: 0, end: 0, source: "raw", elementId: "" });
   const pendingInlineCaretRef = useRef(null);
   const interactionRef = useRef(null);
+  const panInteractionRef = useRef(null);
   const canvasElementsRef = useRef(form.design.canvas.elements || []);
 
   const templateTypeOptions = [...DEFAULT_TEMPLATE_TYPE_OPTIONS, ...templateTypes].reduce((options, type) => {
@@ -807,9 +813,19 @@ export default function TemplatesView({
         : departments.filter((department) => department.companyId === templateListCompanyFilter),
     [departments, templateListCompanyFilter],
   );
+  const companyById = useMemo(
+    () => new Map(companies.map((company) => [company.id, company])),
+    [companies],
+  );
+  const departmentById = useMemo(
+    () => new Map(departments.map((department) => [department.id, department])),
+    [departments],
+  );
   const filteredTemplates = useMemo(
-    () =>
-      templates.filter((template) => {
+    () => {
+      const normalizedSearchTerm = String(templateSearchTerm || "").trim().toLowerCase();
+
+      return templates.filter((template) => {
         if (templateListTypeFilter !== "ALL" && !templateMatchesIssueLetterType(template, templateListTypeFilter)) {
           return false;
         }
@@ -822,9 +838,38 @@ export default function TemplatesView({
           return false;
         }
 
+        if (normalizedSearchTerm) {
+          const companyName = String(companyById.get(template.companyId)?.name || "").toLowerCase();
+          const departmentName = String(departmentById.get(template.departmentId)?.name || "").toLowerCase();
+          const searchableText = [
+            template.name,
+            template.type,
+            template.defaultSubject,
+            template.refCode,
+            template.letterNoPattern,
+            companyName,
+            departmentName,
+          ]
+            .map((value) => String(value || "").toLowerCase())
+            .join(" ");
+
+          if (!searchableText.includes(normalizedSearchTerm)) {
+            return false;
+          }
+        }
+
         return true;
-      }),
-    [templateListCompanyFilter, templateListDepartmentFilter, templateListTypeFilter, templates],
+      }).sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+    },
+    [
+      companyById,
+      departmentById,
+      templateListCompanyFilter,
+      templateListDepartmentFilter,
+      templateListTypeFilter,
+      templateSearchTerm,
+      templates,
+    ],
   );
   const filteredTemplateIdSet = useMemo(
     () => new Set(filteredTemplates.map((template) => template.id)),
@@ -1014,12 +1059,16 @@ export default function TemplatesView({
 
   function openFullscreenEditor() {
     setIsFullscreenEditorOpen(true);
+    setIsCanvasPanMode(false);
+    setIsCanvasPanning(false);
     setActiveEditorSidebarSection("layers");
     setIsEditorInspectorOpen(true);
   }
 
   function closeFullscreenEditor() {
     closeInlineEditor(true);
+    stopViewportPan();
+    setIsCanvasPanMode(false);
     setIsFullscreenEditorOpen(false);
   }
 
@@ -1166,6 +1215,88 @@ export default function TemplatesView({
     applyEditorZoom(ratio);
   }
 
+  function stopViewportPan(event) {
+    const interaction = panInteractionRef.current;
+    const viewport = fullscreenViewportRef.current;
+    if (!interaction) {
+      return;
+    }
+
+    if (
+      event?.pointerId != null &&
+      interaction.pointerId != null &&
+      Number(event.pointerId) !== Number(interaction.pointerId)
+    ) {
+      return;
+    }
+
+    if (viewport && interaction.pointerId != null && typeof viewport.releasePointerCapture === "function") {
+      try {
+        viewport.releasePointerCapture(interaction.pointerId);
+      } catch {
+        // Ignore release errors for stale pointer ids.
+      }
+    }
+
+    panInteractionRef.current = null;
+    setIsCanvasPanning(false);
+  }
+
+  function handleViewportPointerDown(event) {
+    if (!isFullscreenEditorOpen) {
+      return;
+    }
+
+    const isMiddleButton = event.button === 1;
+    const isHandToolDrag = event.button === 0 && isCanvasPanMode;
+    if (!isMiddleButton && !isHandToolDrag) {
+      return;
+    }
+
+    const viewport = fullscreenViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (typeof viewport.setPointerCapture === "function") {
+      try {
+        viewport.setPointerCapture(event.pointerId);
+      } catch {
+        // Some pointer types may not allow capture; fallback still works.
+      }
+    }
+
+    panInteractionRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop,
+    };
+    setIsCanvasPanning(true);
+  }
+
+  function handleViewportPointerMove(event) {
+    const interaction = panInteractionRef.current;
+    const viewport = fullscreenViewportRef.current;
+    if (!interaction || !viewport) {
+      return;
+    }
+
+    if (interaction.pointerId != null && event.pointerId != null && event.pointerId !== interaction.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const deltaX = event.clientX - interaction.startClientX;
+    const deltaY = event.clientY - interaction.startClientY;
+    viewport.scrollLeft = interaction.startScrollLeft - deltaX;
+    viewport.scrollTop = interaction.startScrollTop - deltaY;
+  }
+
   useEffect(() => {
     if (!isFullscreenEditorOpen) {
       return;
@@ -1173,6 +1304,56 @@ export default function TemplatesView({
 
     const frameId = window.requestAnimationFrame(() => fitEditorToPage());
     return () => window.cancelAnimationFrame(frameId);
+  }, [isFullscreenEditorOpen]);
+
+  useEffect(() => {
+    if (!isFullscreenEditorOpen) {
+      setIsCanvasPanMode(false);
+      setIsCanvasPanning(false);
+      panInteractionRef.current = null;
+      return undefined;
+    }
+
+    function onKeyDown(event) {
+      if (event.key !== " ") {
+        return;
+      }
+
+      const activeTag = document.activeElement?.tagName || "";
+      const isTypingTarget =
+        activeTag === "INPUT" ||
+        activeTag === "TEXTAREA" ||
+        activeTag === "SELECT" ||
+        document.activeElement?.getAttribute("contenteditable") === "true";
+      if (isTypingTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsCanvasPanMode(true);
+    }
+
+    function onKeyUp(event) {
+      if (event.key === " ") {
+        setIsCanvasPanMode(false);
+      }
+    }
+
+    function onBlur() {
+      setIsCanvasPanMode(false);
+      setIsCanvasPanning(false);
+      panInteractionRef.current = null;
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [isFullscreenEditorOpen]);
 
   useEffect(() => {
@@ -1227,8 +1408,49 @@ export default function TemplatesView({
         return;
       }
 
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        stopViewportPan();
+        setIsCanvasPanMode((current) => !current);
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (!selectedElementId && !selectedElementIds.length) {
+          return;
+        }
+        event.preventDefault();
+        removeSelectedElement({ skipConfirm: true });
+        return;
+      }
+
+      if (event.key.startsWith("Arrow")) {
+        const step = event.shiftKey ? NUDGE_STEP_LARGE_PERCENT : NUDGE_STEP_PERCENT;
+        let moved = false;
+        if (event.key === "ArrowLeft") {
+          moved = nudgeSelectedElements(-step, 0);
+        } else if (event.key === "ArrowRight") {
+          moved = nudgeSelectedElements(step, 0);
+        } else if (event.key === "ArrowUp") {
+          moved = nudgeSelectedElements(0, -step);
+        } else if (event.key === "ArrowDown") {
+          moved = nudgeSelectedElements(0, step);
+        }
+
+        if (moved) {
+          event.preventDefault();
+        }
+        return;
+      }
+
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
       if (!ctrlOrMeta) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        selectAllElementsOnActivePage();
         return;
       }
 
@@ -1271,12 +1493,38 @@ export default function TemplatesView({
 
         event.preventDefault();
         pasteCopiedElement();
+        return;
+      }
+
+      if (event.key === "0") {
+        event.preventDefault();
+        fitEditorToPage();
+        return;
+      }
+
+      if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        applyEditorZoom(editorZoomPercent + 10);
+        return;
+      }
+
+      if (event.key === "-") {
+        event.preventDefault();
+        applyEditorZoom(editorZoomPercent - 10);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canRedoCanvas, canUndoCanvas, copiedCanvasElement, isFullscreenEditorOpen, selectedElementId]);
+  }, [
+    canRedoCanvas,
+    canUndoCanvas,
+    copiedCanvasElement,
+    editorZoomPercent,
+    isFullscreenEditorOpen,
+    selectedElementId,
+    selectedElementIds,
+  ]);
 
   useEffect(() => {
     function onTextStyleShortcut(event) {
@@ -1809,8 +2057,47 @@ export default function TemplatesView({
     setSelectedElementIds([]);
   }
 
+  function selectAllElementsOnActivePage() {
+    const ids = canvasElements.map((element) => element.id);
+    if (!ids.length) {
+      clearCanvasSelection();
+      return;
+    }
+
+    setSelectedElementId(ids[ids.length - 1]);
+    setSelectedElementIds(ids);
+  }
+
+  function nudgeSelectedElements(deltaX = 0, deltaY = 0) {
+    const baseSelection = Array.isArray(selectedElementIds) && selectedElementIds.length
+      ? selectedElementIds
+      : selectedElementId
+        ? [selectedElementId]
+        : [];
+    if (!baseSelection.length) {
+      return false;
+    }
+
+    const selectedSet = new Set(baseSelection);
+    return updateCanvasElements((elements) =>
+      elements.map((element) => {
+        if (!selectedSet.has(element.id)) {
+          return element;
+        }
+
+        const width = Number(element.width || 0);
+        const height = Number(element.height || 0);
+        return {
+          ...element,
+          x: clamp(Number(element.x || 0) + Number(deltaX || 0), 0, 100 - width),
+          y: clamp(Number(element.y || 0) + Number(deltaY || 0), 0, 100 - height),
+        };
+      }),
+    );
+  }
+
   function handleElementListSelection(event, elementId) {
-    const multiToggle = Boolean(event?.ctrlKey || event?.metaKey);
+    const multiToggle = Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey);
     if (multiToggle) {
       const source = Array.isArray(selectedElementIds) ? selectedElementIds : [];
       if (source.includes(elementId)) {
@@ -1832,7 +2119,11 @@ export default function TemplatesView({
   }
 
   function handleElementPointerDown(event, element, mode = "drag") {
-    const multiToggle = mode === "drag" && Boolean(event?.ctrlKey || event?.metaKey);
+    if (isFullscreenEditorOpen && (isCanvasPanMode || event.button === 1)) {
+      return;
+    }
+
+    const multiToggle = mode === "drag" && Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey);
     if (multiToggle) {
       event.preventDefault();
       event.stopPropagation();
@@ -2646,7 +2937,8 @@ export default function TemplatesView({
     updateSelectedElement({ text: lines.join("\n") });
   }
 
-  function removeSelectedElement() {
+  function removeSelectedElement(options = {}) {
+    const { skipConfirm = false } = options;
     const baseSelection = Array.isArray(selectedElementIds) && selectedElementIds.length
       ? selectedElementIds
       : selectedElementId
@@ -2656,13 +2948,15 @@ export default function TemplatesView({
       return;
     }
 
-    const confirmed = window.confirm(
-      baseSelection.length > 1
-        ? `Delete ${baseSelection.length} selected canvas elements?`
-        : "Delete selected canvas element?",
-    );
-    if (!confirmed) {
-      return;
+    if (!skipConfirm) {
+      const confirmed = window.confirm(
+        baseSelection.length > 1
+          ? `Delete ${baseSelection.length} selected canvas elements?`
+          : "Delete selected canvas element?",
+      );
+      if (!confirmed) {
+        return;
+      }
     }
 
     const selectedSet = new Set(baseSelection);
@@ -2693,6 +2987,13 @@ export default function TemplatesView({
       filteredTemplates.forEach((template) => currentSet.add(template.id));
       return Array.from(currentSet);
     });
+  }
+
+  function resetTemplateLibraryFilters() {
+    setTemplateSearchTerm("");
+    setTemplateListCompanyFilter("ALL");
+    setTemplateListDepartmentFilter("ALL");
+    setTemplateListTypeFilter("ALL");
   }
 
   async function handleDeleteTemplateById(templateId) {
@@ -2829,17 +3130,8 @@ export default function TemplatesView({
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      let firstPresetId = "";
 
       setForm((current) => {
-        const existingElements = current.design.canvas?.elements || [];
-        const shouldCreatePreset = !existingElements.length;
-        const presetElements = shouldCreatePreset ? createBackgroundTextElements() : existingElements;
-
-        if (shouldCreatePreset) {
-          firstPresetId = presetElements[0]?.id || "";
-        }
-
         return {
           ...current,
           design: {
@@ -2850,18 +3142,9 @@ export default function TemplatesView({
               dataUrl,
               fileName: file.name,
             },
-            canvas: {
-              ...current.design.canvas,
-              elements: presetElements,
-            },
           },
         };
       });
-
-      if (firstPresetId) {
-        setSelectedElementId(firstPresetId);
-        setSelectedElementIds([firstPresetId]);
-      }
     };
     reader.readAsDataURL(file);
     event.target.value = "";
@@ -3295,6 +3578,14 @@ export default function TemplatesView({
                     onChange={(event) => updateDesign("showSignatureLine", event.target.checked)}
                   />
                   <span>Show signature blocks</span>
+                </label>
+                <label className="checkbox-field span-2">
+                  <input
+                    type="checkbox"
+                    checked={form.design.showStructuredShell !== false}
+                    onChange={(event) => updateDesign("showStructuredShell", event.target.checked)}
+                  />
+                  <span>Show automatic header, meta, recipient, and footer blocks (structured mode)</span>
                 </label>
                 <label className="checkbox-field span-2">
                   <input
@@ -4345,7 +4636,7 @@ export default function TemplatesView({
           </div>
         </article>
 
-        <article className="panel">
+        <article className="panel panel-template-library">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Library</p>
@@ -4371,6 +4662,15 @@ export default function TemplatesView({
           {templates.length ? (
             <div className="template-library-toolbar">
               <div className="template-library-filters">
+                <label className="template-library-search">
+                  Search template
+                  <input
+                    type="search"
+                    value={templateSearchTerm}
+                    onChange={(event) => setTemplateSearchTerm(event.target.value)}
+                    placeholder="Name, type, subject, company..."
+                  />
+                </label>
                 <label>
                   Company
                   <select
@@ -4410,9 +4710,24 @@ export default function TemplatesView({
                   </select>
                 </label>
               </div>
-              <span className="template-library-count">
-                Showing {filteredTemplates.length} of {templates.length}
-              </span>
+              <div className="template-library-toolbar__meta">
+                <span className="template-library-count">
+                  Showing {filteredTemplates.length} of {templates.length}
+                </span>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={resetTemplateLibraryFilters}
+                  disabled={
+                    templateSearchTerm.trim().length === 0 &&
+                    templateListCompanyFilter === "ALL" &&
+                    templateListDepartmentFilter === "ALL" &&
+                    templateListTypeFilter === "ALL"
+                  }
+                >
+                  Reset filters
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -4491,7 +4806,8 @@ export default function TemplatesView({
               <div className="editor-modal__statusbar">
                 <span className="editor-chip">{totalTemplatePages} page{totalTemplatePages === 1 ? "" : "s"}</span>
                 <span className="editor-chip">{activePageSize}</span>
-                <span className="editor-modal__hint">Ctrl + Wheel zooms. Double-click text to edit directly on the page.</span>
+                {isCanvasPanMode ? <span className="editor-chip">Hand Tool On</span> : null}
+                <span className="editor-modal__hint">Ctrl + Wheel zooms. Space + drag (or middle mouse) pans. Press H for Hand Tool.</span>
                 <button className="button button-secondary" type="button" onClick={closeFullscreenEditor}>
                   Back to templates
                 </button>
@@ -4518,6 +4834,16 @@ export default function TemplatesView({
                 </button>
                 <button className="button button-secondary" type="button" onClick={duplicateSelectedElement} disabled={!selectedElement}>
                   Duplicate
+                </button>
+                <button
+                  className={`button ${isCanvasPanMode ? "button-primary" : "button-secondary"}`}
+                  type="button"
+                  onClick={() => {
+                    stopViewportPan();
+                    setIsCanvasPanMode((current) => !current);
+                  }}
+                >
+                  Hand Tool (H)
                 </button>
               </div>
               <div className="editor-toolbar-group editor-toolbar-group--zoom">
@@ -4585,7 +4911,15 @@ export default function TemplatesView({
 
               <div className="editor-modal__workspace">
                 <div className="editor-modal__canvas-panel">
-                <div className="fullscreen-canvas-viewport" ref={fullscreenViewportRef}>
+                <div
+                  className={`fullscreen-canvas-viewport ${isCanvasPanMode ? "is-pan-mode" : ""} ${isCanvasPanning ? "is-panning" : ""}`}
+                  ref={fullscreenViewportRef}
+                  onPointerDown={handleViewportPointerDown}
+                  onPointerMove={handleViewportPointerMove}
+                  onPointerUp={stopViewportPan}
+                  onPointerCancel={stopViewportPan}
+                  onPointerLeave={stopViewportPan}
+                >
                   <div
                     className="fullscreen-canvas-zoom-layer"
                     style={{
@@ -4604,11 +4938,21 @@ export default function TemplatesView({
                           <div
                             key={`editor-page-${pageIndex + 1}`}
                             className={`template-canvas template-canvas--fullscreen ${isActiveEditorPage ? "is-active-page" : ""}`}
-                            onPointerDown={isActiveEditorPage ? () => {
+                            onPointerDown={(event) => {
+                              if (isCanvasPanMode || event.button === 1) {
+                                return;
+                              }
+
+                              if (!isActiveEditorPage) {
+                                setActiveEditorPageIndex(pageIndex);
+                                setAlignmentGuides({ vertical: null, horizontal: null });
+                                return;
+                              }
+
                               clearCanvasSelection();
                               closeInlineEditor(true);
                               setAlignmentGuides({ vertical: null, horizontal: null });
-                            } : undefined}
+                            }}
                             style={{
                               width: `${canvasWidth}px`,
                               height: `${canvasHeight}px`,
