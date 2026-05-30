@@ -92,19 +92,20 @@ export default function CreateClientView({ permissions, fieldManagerPermissions,
         />
       ) : null}
 
-      <article className="panel">
-        <form className="form-grid" onSubmit={handleSubmit}>
+      <article className="panel client-form-panel">
+        <form className="form-grid client-form-grid" onSubmit={handleSubmit}>
           {activeFields.map((field) => {
             const key = field.field_key;
             const label = field.label || key;
             const value = form[key] ?? "";
             const options = Array.isArray(field.options_json) ? field.options_json : [];
-            const isWide = field.input_type === "textarea";
+            const isCompactTextArea = ["address", "notes"].includes(key);
+            const isWide = field.input_type === "textarea" && !isCompactTextArea;
             return (
               <label key={field.id || key} className={isWide ? "span-2" : ""}>
                 {label}{field.is_required ? " *" : ""}
                 {field.input_type === "textarea" ? (
-                  <textarea rows={3} value={value} onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))} />
+                  <textarea rows={isCompactTextArea ? 1 : 3} value={value} onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))} />
                 ) : field.input_type === "select" ? (
                   <select value={value} onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}>
                     {!field.is_required ? <option value="">Select</option> : null}
@@ -122,7 +123,9 @@ export default function CreateClientView({ permissions, fieldManagerPermissions,
               </label>
             );
           })}
-          <button className="button button-primary" type="submit">{submitLabel}</button>
+          <div className="client-form-actions">
+            <button className="button button-primary" type="submit">{submitLabel}</button>
+          </div>
         </form>
       </article>
     </section>

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import EmptyState from "../components/EmptyState";
 import {
   DEFAULT_REFERENCE_PATTERN,
@@ -158,6 +158,62 @@ const BACKGROUND_TEXT_PRESET = [
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function getSafePageCount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+
+  return clamp(Math.floor(parsed), 1, 50);
+}
+
+class EditorErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      message: error?.message || "The editor hit an unexpected rendering problem.",
+    };
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, message: "" });
+    }
+  }
+
+  componentDidCatch(error) {
+    console.error("Template editor render failed", error);
+  }
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+
+    return (
+      <div className="editor-modal-backdrop editor-fullscreen-page">
+        <div className="editor-modal editor-modal--error" role="dialog" aria-modal="true">
+          <section className="editor-error-panel">
+            <p className="eyebrow">Canvas Editor</p>
+            <h3>Editor could not open this template</h3>
+            <p>
+              {this.state.message || "The template design data had an invalid value. Go back to templates, save the template once, and open the editor again."}
+            </p>
+            <button className="button button-primary" type="button" onClick={this.props.onClose}>
+              Back to templates
+            </button>
+          </section>
+        </div>
+      </div>
+    );
+  }
 }
 
 function getLineStrokeWidth(element) {
@@ -882,7 +938,7 @@ export default function TemplatesView({
   const activePageSize = String(form.design.pageSize || "A4").toUpperCase() === "LEGAL" ? "LEGAL" : "A4";
   const canvasWidth = activePageSize === "LEGAL" ? LEGAL_CANVAS_WIDTH : A4_CANVAS_WIDTH;
   const canvasHeight = activePageSize === "LEGAL" ? LEGAL_CANVAS_HEIGHT : A4_CANVAS_HEIGHT;
-  const totalTemplatePages = Math.max(1, Number(form.design.additionalPages || 1));
+  const totalTemplatePages = getSafePageCount(form.design.additionalPages || 1);
   const templatePageIndexes = useMemo(
     () => Array.from({ length: totalTemplatePages }, (_, index) => index),
     [totalTemplatePages],
@@ -1046,9 +1102,11 @@ export default function TemplatesView({
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    document.body.classList.add("is-template-editor-open");
 
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("is-template-editor-open");
     };
   }, [isFullscreenEditorOpen]);
 
@@ -1058,11 +1116,17 @@ export default function TemplatesView({
   }
 
   function openFullscreenEditor() {
+    setForm((current) => ({
+      ...current,
+      design: normalizeTemplateDesign(current.design),
+    }));
+    setActiveEditorPageIndex((current) => clamp(Number(current) || 0, 0, totalTemplatePages - 1));
     setIsFullscreenEditorOpen(true);
     setIsCanvasPanMode(false);
     setIsCanvasPanning(false);
     setActiveEditorSidebarSection("layers");
     setIsEditorInspectorOpen(true);
+    setIsEditorSidebarCollapsed(false);
   }
 
   function closeFullscreenEditor() {
@@ -1871,6 +1935,10 @@ export default function TemplatesView({
   }
 
   function addEditorPage() {
+    if (totalTemplatePages >= 50) {
+      return;
+    }
+
     updateDesign("additionalPages", totalTemplatePages + 1);
     setActiveEditorPageIndex(totalTemplatePages);
     setActiveEditorSidebarSection("pages");
@@ -1879,6 +1947,10 @@ export default function TemplatesView({
   }
 
   function duplicateEditorPage(pageIndex = activeEditorPageIndex) {
+    if (totalTemplatePages >= 50) {
+      return;
+    }
+
     const sourceElements = (form.design.canvas.elements || []).filter((element) => Number(element.pageIndex || 0) === pageIndex);
     const nextPageIndex = totalTemplatePages;
     let duplicatedIds = [];
@@ -1944,11 +2016,11 @@ export default function TemplatesView({
         )
         .map((element, index) => ({ ...element, zIndex: index }));
 
-      return {
-        ...current,
-        design: {
-          ...current.design,
-          additionalPages: Math.max(1, Number(current.design.additionalPages || 1) - 1),
+    return {
+      ...current,
+      design: {
+        ...current.design,
+          additionalPages: getSafePageCount(current.design.additionalPages || 1) - 1,
           canvas: {
             ...current.design.canvas,
             elements: nextElements,
@@ -3224,7 +3296,9 @@ export default function TemplatesView({
     : null;
 
   return (
-    <section className="view is-active templates-view">
+    <section className={`view is-active templates-view ${isFullscreenEditorOpen ? "templates-view--editor-open" : ""}`}>
+      {!isFullscreenEditorOpen ? (
+      <>
       <div className="section-heading">
         <div>
           <p className="eyebrow">Template Builder</p>
@@ -4794,8 +4868,14 @@ export default function TemplatesView({
           )}
         </article>
       </div>
+      </>
+      ) : null}
 
       {isFullscreenEditorOpen ? (
+        <EditorErrorBoundary
+          onClose={closeFullscreenEditor}
+          resetKey={`${editingTemplateId || "new"}:${activePageSize}:${totalTemplatePages}:${isFullscreenEditorOpen}`}
+        >
         <div className="editor-modal-backdrop editor-fullscreen-page">
           <div className="editor-modal" role="dialog" aria-modal="true">
             <div className="editor-modal__header">
@@ -5066,6 +5146,12 @@ export default function TemplatesView({
                           ) : null}
                           {isActiveEditorPage && alignmentGuides.horizontal != null ? (
                             <span className="canvas-alignment-guide canvas-alignment-guide--horizontal" style={{ top: `${alignmentGuides.horizontal}%` }} />
+                          ) : null}
+                          {isActiveEditorPage && !allCanvasElements.some((element) => Number(element.pageIndex || 0) === pageIndex) ? (
+                            <div className="editor-empty-canvas-note">
+                              <strong>No elements on this page yet</strong>
+                              <span>Use Insert in the side panel to add text, fields, boxes, or lines.</span>
+                            </div>
                           ) : null}
                           {allCanvasElements
                             .filter((element) => Number(element.pageIndex || 0) === pageIndex)
@@ -5822,6 +5908,7 @@ export default function TemplatesView({
             </div>
           </div>
         </div>
+        </EditorErrorBoundary>
       ) : null}
     </section>
   );

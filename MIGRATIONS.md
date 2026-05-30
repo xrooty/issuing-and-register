@@ -22,10 +22,14 @@ Run these in order:
 14. `db/migrations/20260509_0013_admin_user_auth_functions.sql`
 15. `db/migrations/20260509_0014_repair_dynamic_permissions_feature_key.sql`
 16. `db/migrations/20260509_0015_drop_legacy_role_check_constraints.sql`
+17. `db/migrations/20260511_0016_dashboard_action_permissions.sql`
+18. `db/migrations/20260511_0017_simplify_admin_password_reset.sql`
+19. `db/migrations/20260511_0018_user_department_data_scope.sql`
+20. `db/migrations/20260511_0019_prune_invalid_permission_modules.sql`
 
 **Older DB Compatibility**
 
-If your live database was created from an older version of the project, run the canonical migrations through `20260508_0010_user_permission_overrides.sql`, then run `20260509_0011_repair_rls_user_profiles_refs.sql`, `20260509_0012_activity_logging_setting.sql`, `20260509_0013_admin_user_auth_functions.sql`, `20260509_0014_repair_dynamic_permissions_feature_key.sql`, and `20260509_0015_drop_legacy_role_check_constraints.sql`. The `0011` repair drops old RLS policies that may still reference `public.user_profiles` and recreates clean policies for the current `public.users` role model. The `0012` migration adds the activity-history switch while keeping existing `activity_log` rows unchanged. The `0014` and `0015` repairs remove legacy hardcoded role constraints so dynamic roles can save rows in `role_permissions`. The older `20260507_fix_clients_schema_compat.sql` is kept only as legacy history.
+If your live database was created from an older version of the project, run the canonical migrations through `20260508_0010_user_permission_overrides.sql`, then run `20260509_0011_repair_rls_user_profiles_refs.sql`, `20260509_0012_activity_logging_setting.sql`, `20260509_0013_admin_user_auth_functions.sql`, `20260509_0014_repair_dynamic_permissions_feature_key.sql`, `20260509_0015_drop_legacy_role_check_constraints.sql`, `20260511_0016_dashboard_action_permissions.sql`, `20260511_0017_simplify_admin_password_reset.sql`, `20260511_0018_user_department_data_scope.sql`, and `20260511_0019_prune_invalid_permission_modules.sql`. The `0011` repair drops old RLS policies that may still reference `public.user_profiles` and recreates clean policies for the current `public.users` role model. The `0012` migration adds the activity-history switch while keeping existing `activity_log` rows unchanged. The `0014` and `0015` repairs remove legacy hardcoded role constraints so dynamic roles can save rows in `role_permissions`. The `0019` migration removes stale permission module names that are not used by the current app. The older `20260507_fix_clients_schema_compat.sql` is kept only as legacy history.
 
 **Supabase Auth**
 

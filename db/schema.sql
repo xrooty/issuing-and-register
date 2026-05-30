@@ -87,8 +87,24 @@ create table if not exists users (
   email text not null unique,
   full_name text default '',
   role text not null default '',
+  department_name text default '',
   active boolean not null default true,
   created_at timestamptz not null default now()
+);
+
+create table if not exists user_security (
+  user_id uuid primary key references users(id) on delete cascade,
+  two_factor_enabled boolean not null default false,
+  two_factor_secret text default '',
+  two_factor_verified_at timestamptz,
+  email_confirmation_enabled boolean not null default false,
+  email_confirmation_code text default '',
+  email_confirmation_sent_at timestamptz,
+  email_confirmation_expires_at timestamptz,
+  email_confirmed_at timestamptz,
+  reset_required boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists activity_log (
@@ -184,7 +200,7 @@ create table if not exists role_data_scopes (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (role, module),
-  constraint role_data_scopes_scope_type_check check (scope_type in ('own_data', 'own_department', 'selected_departments', 'all_departments'))
+  constraint role_data_scopes_scope_type_check check (scope_type in ('own_data', 'own_department', 'selected_departments'))
 );
 
 create table if not exists user_permissions (
@@ -200,7 +216,7 @@ create table if not exists user_permissions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, module),
-  constraint user_permissions_scope_type_check check (scope_type is null or scope_type in ('own_data', 'own_department', 'selected_departments', 'all_departments'))
+  constraint user_permissions_scope_type_check check (scope_type is null or scope_type in ('own_data', 'own_department', 'selected_departments'))
 );
 
 create table if not exists roles (
@@ -237,6 +253,8 @@ create index if not exists idx_letters_template_id on letters(template_id);
 create index if not exists idx_letters_created_at on letters(created_at desc);
 create index if not exists idx_role_data_scopes_role on role_data_scopes(role);
 create index if not exists idx_user_permissions_user_id on user_permissions(user_id);
+create index if not exists idx_user_security_two_factor_enabled on user_security(two_factor_enabled);
+create index if not exists idx_user_security_email_confirmation_enabled on user_security(email_confirmation_enabled);
 
 create or replace function next_sequence(counter_key text)
 returns integer
@@ -294,7 +312,7 @@ begin
     requested_role := 'admin';
   end if;
 
-  insert into public.users (id, email, full_name, role, active)
+  insert into public.users (id, email, full_name, role, department_name, active)
   values (
     new.id,
     lower(new.email),
@@ -303,6 +321,7 @@ begin
       when not exists (select 1 from public.users where role = 'admin') then 'admin'
       else coalesce(requested_role, '')
     end,
+    coalesce(nullif(new.raw_user_meta_data->>'department_name', ''), ''),
     true
   )
   on conflict (email) do update
@@ -314,6 +333,10 @@ begin
     role = case
       when public.users.role = 'super_admin' then 'admin'
       else public.users.role
+    end,
+    department_name = case
+      when nullif(public.users.department_name, '') is null then excluded.department_name
+      else public.users.department_name
     end,
     active = true;
 
@@ -450,6 +473,7 @@ with auth_profiles as (
     auth_users.id,
     lower(auth_users.email) as email,
     coalesce(nullif(auth_users.raw_user_meta_data->>'full_name', ''), '') as full_name,
+    coalesce(nullif(auth_users.raw_user_meta_data->>'department_name', ''), '') as department_name,
     case
       when auth_users.raw_user_meta_data->>'role' = 'super_admin' then 'admin'
       else coalesce(nullif(auth_users.raw_user_meta_data->>'role', ''), '')
@@ -458,7 +482,7 @@ with auth_profiles as (
   from auth.users as auth_users
   where auth_users.email is not null
 )
-insert into public.users (id, email, full_name, role, active)
+insert into public.users (id, email, full_name, role, department_name, active)
 select
   auth_profiles.id,
   auth_profiles.email,
@@ -469,6 +493,7 @@ select
       then 'admin'
     else auth_profiles.requested_role
   end,
+  auth_profiles.department_name,
   true
 from auth_profiles
 on conflict (email) do update
@@ -480,6 +505,10 @@ set
   role = case
     when public.users.role = 'super_admin' then 'admin'
     else public.users.role
+  end,
+  department_name = case
+    when nullif(public.users.department_name, '') is null then excluded.department_name
+    else public.users.department_name
   end,
   active = true;
 
@@ -502,12 +531,13 @@ insert into permission_modules(name) values
   ('dashboard_export_register_csv'),
   ('dashboard_backup_json'),
   ('dashboard_refresh_db'),
-  ('clients'),
+  ('clients-create'),
+  ('clients-all'),
+  ('clients-profile'),
   ('users'),
   ('roles'),
   ('admin'),
   ('activity_settings'),
-  ('reports'),
   ('activity'),
   ('companies'),
   ('departments'),

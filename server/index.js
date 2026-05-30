@@ -2,6 +2,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import { getEmployeeByEmpId, searchEmployees } from "./employees.js";
 import { getHrKeyRole, getHrSupabaseHost, isHrSupabaseConfigured } from "./supabaseHr.js";
+import { sendUserEmailConfirmationCode } from "./authSecurity.js";
 
 const PORT = Number(process.env.PORT || 8787);
 let dbApi = null;
@@ -156,6 +157,21 @@ const server = http.createServer(async (request, response) => {
       sendJson(response, 200, {
         ok: true,
         data,
+      });
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/api/auth-security/email-confirmation/send") {
+      const body = await readJsonBody(request);
+      const result = await sendUserEmailConfirmationCode({
+        accessToken: body?.accessToken,
+        userId: body?.userId,
+        email: body?.email,
+        fullName: body?.fullName,
+      });
+      sendJson(response, 200, {
+        ok: true,
+        data: result,
       });
       return;
     }

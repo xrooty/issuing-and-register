@@ -12,8 +12,7 @@ const SCOPE_OPTIONS = [
   { value: "", label: "Role Default" },
   { value: "own_data", label: "Own Personal Data" },
   { value: "own_department", label: "Own Department" },
-  { value: "selected_departments", label: "Selected Departments" },
-  { value: "all_departments", label: "All Departments" },
+  { value: "selected_departments", label: "Selected Department" },
 ];
 
 const MODULE_LABELS = {
@@ -34,6 +33,7 @@ const MODULE_LABELS = {
   activity: "Activity",
   activity_settings: "Activity History Control",
   admin: "Admin",
+  client_fields: "Client Fields",
 };
 
 function normalizeRoleName(role) {
@@ -42,6 +42,10 @@ function normalizeRoleName(role) {
 
 function cleanDepartments(list = []) {
   return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeScopeType(scopeType) {
+  return ["own_data", "own_department", "selected_departments"].includes(scopeType) ? scopeType : "";
 }
 
 function emptyOverride(module) {
@@ -65,8 +69,8 @@ function normalizeOverride(row = {}) {
     can_create: typeof row.can_create === "boolean" ? row.can_create : null,
     can_edit: typeof row.can_edit === "boolean" ? row.can_edit : null,
     can_delete: typeof row.can_delete === "boolean" ? row.can_delete : null,
-    scope_type: row.scope_type || "",
-    department_names: row.scope_type === "selected_departments" ? cleanDepartments(row.department_names || []) : [],
+    scope_type: normalizeScopeType(row.scope_type),
+    department_names: normalizeScopeType(row.scope_type) === "selected_departments" ? cleanDepartments(row.department_names || []) : [],
   };
   if (next.can_create === true || next.can_edit === true || next.can_delete === true) {
     next.can_view = true;
@@ -217,7 +221,7 @@ export default function AdminRoleUsersView({
           </div>
 
           {selectedUser ? (
-            <div className="table-wrap">
+            <div className="table-wrap admin-permissions-table">
               <table>
                 <thead><tr><th>Module</th><th>Data Scope Override</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th></tr></thead>
                 <tbody>

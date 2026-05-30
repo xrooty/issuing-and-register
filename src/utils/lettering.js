@@ -1319,6 +1319,433 @@ export function buildRegisterExportCsv(data) {
   return lines.join("\n");
 }
 
+const CLIENT_EXPORT_SYSTEM_FIELDS = [
+  { key: "client_name", label: "Client Name" },
+  { key: "client_code", label: "Client Code" },
+  { key: "company", label: "Client Company" },
+  { key: "contact_name", label: "Primary Contact Name" },
+  { key: "contact_name_secondary", label: "Secondary Contact Name" },
+  { key: "designation", label: "Designation" },
+  { key: "email", label: "Email" },
+  { key: "email_secondary", label: "Secondary Email" },
+  { key: "phone", label: "Phone" },
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "city", label: "City" },
+  { key: "state", label: "State" },
+  { key: "country", label: "Country" },
+  { key: "postal_code", label: "Postal Code" },
+  { key: "address", label: "Address" },
+  { key: "industry", label: "Industry" },
+  { key: "source", label: "Source" },
+  { key: "priority", label: "Priority" },
+  { key: "assigned_owner", label: "Assigned Owner" },
+  { key: "status", label: "Status" },
+  { key: "follow_up_date", label: "Follow Up Date" },
+  { key: "tags", label: "Tags" },
+  { key: "notes", label: "Notes" },
+];
+
+function normalizeExportLabel(value, fallback) {
+  const label = String(value || "").replace(/_/g, " ").trim();
+  if (!label) {
+    return fallback;
+  }
+
+  return label.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getClientExportFields(clientFields = [], clients = []) {
+  const fields = [];
+  const seen = new Set();
+
+  function addField(key, label) {
+    const safeKey = String(key || "").trim();
+    if (!safeKey || seen.has(safeKey)) {
+      return;
+    }
+    seen.add(safeKey);
+    fields.push({ key: safeKey, label: normalizeExportLabel(label, safeKey) });
+  }
+
+  CLIENT_EXPORT_SYSTEM_FIELDS.forEach((field) => addField(field.key, field.label));
+
+  (clientFields || [])
+    .filter((field) => field?.is_active !== false)
+    .slice()
+    .sort((left, right) => Number(left?.sort_order || 0) - Number(right?.sort_order || 0))
+    .forEach((field) => addField(field.field_key, field.label));
+
+  (clients || []).forEach((client) => {
+    const custom = client?.custom_fields_json;
+    if (!custom || typeof custom !== "object") {
+      return;
+    }
+
+    Object.keys(custom).forEach((key) => addField(key, normalizeExportLabel(key, key)));
+  });
+
+  return fields;
+}
+
+function getClientExportValue(client, key) {
+  if (!client || !key) {
+    return "";
+  }
+
+  if (client[key] != null && String(client[key]).trim()) {
+    return String(client[key]).trim();
+  }
+
+  if (key === "client_name" && client.full_name != null && String(client.full_name).trim()) {
+    return String(client.full_name).trim();
+  }
+
+  const custom = client.custom_fields_json;
+  if (custom && typeof custom === "object" && custom[key] != null) {
+    return String(custom[key]).trim();
+  }
+
+  return "";
+}
+
+function clientMatchesLetter(client, letter) {
+  if (!client || !letter) {
+    return false;
+  }
+
+  if (letter.clientId && letter.clientId === client.id) {
+    return true;
+  }
+
+  const clientEmail = String(client.email || client.email_secondary || "").trim().toLowerCase();
+  const letterEmail = String(letter.legacyClientEmail || "").trim().toLowerCase();
+  if (clientEmail && letterEmail && clientEmail === letterEmail) {
+    return true;
+  }
+
+  const clientName = String(client.client_name || client.full_name || client.contact_name || "").trim().toLowerCase();
+  const letterName = String(letter.legacyClientName || letter.recipientName || "").trim().toLowerCase();
+  const clientCompany = String(client.company || "").trim().toLowerCase();
+  const letterCompany = String(letter.legacyClientCompany || letter.recipientCompany || "").trim().toLowerCase();
+
+  if (clientName && letterName && clientName === letterName) {
+    return true;
+  }
+
+  return Boolean(clientCompany && letterCompany && clientCompany === letterCompany && clientName && letterName && clientName === letterName);
+}
+
+function resolveLetterIssueType(letter, templates = []) {
+  const template = templates.find((item) => item.id === letter.templateId);
+  return normalizeIssueLetterType([
+    letter.templateSnapshot?.type,
+    letter.templateSnapshot?.name,
+    template?.type,
+    template?.name,
+  ].filter(Boolean).join(" "));
+}
+
+function summarizeClientLetters(client, data) {
+  const clientLetters = (data.letters || []).filter((letter) => clientMatchesLetter(client, letter));
+  const normalLetters = [];
+  const agLetters = [];
+
+  clientLetters.forEach((letter) => {
+    const title = [letter.letterNo, letter.subject || letter.templateSnapshot?.name].filter(Boolean).join(" - ");
+    if (resolveLetterIssueType(letter, data.templates || []) === "AG") {
+      agLetters.push(title);
+    } else {
+      normalLetters.push(title);
+    }
+  });
+
+  return {
+    clientLetters,
+    normalLetters,
+    agLetters,
+  };
+}
+
+function getLetterCompanyNames(letters = [], companies = []) {
+  return Array.from(new Set(letters.map((letter) => companies.find((company) => company.id === letter.companyId)?.name || "").filter(Boolean)));
+}
+
+function getLetterDepartmentNames(letters = [], departments = []) {
+  return Array.from(new Set(letters.map((letter) => departments.find((department) => department.id === letter.departmentId)?.name || "").filter(Boolean)));
+}
+
+function buildClientsExportRows({ data, clients, clientFields, groupCompanyName = "", groupDepartmentName = "" }) {
+  const sourceClients = Array.isArray(clients) ? clients : [];
+  const fields = getClientExportFields(clientFields, sourceClients);
+  return sourceClients
+    .slice()
+    .sort((left, right) => {
+      const leftName = `${groupCompanyName || left.company || ""} ${groupDepartmentName || ""} ${left.client_name || left.full_name || ""}`;
+      const rightName = `${groupCompanyName || right.company || ""} ${groupDepartmentName || ""} ${right.client_name || right.full_name || ""}`;
+      return leftName.localeCompare(rightName);
+    })
+    .map((client) => {
+      const summary = summarizeClientLetters(client, data);
+      const letterCompanies = getLetterCompanyNames(summary.clientLetters, data.companies || []);
+      const letterDepartments = getLetterDepartmentNames(summary.clientLetters, data.departments || []);
+      const row = {
+        "Export Company": groupCompanyName || client.company || letterCompanies.join(" | "),
+        "Export Department": groupDepartmentName || letterDepartments.join(" | "),
+      };
+
+      fields.forEach((field) => {
+        row[field.label] = getClientExportValue(client, field.key);
+      });
+
+      row["Total Letters Issued"] = summary.normalLetters.length;
+      row["Letter Names / Subjects"] = summary.normalLetters.join(" | ");
+      row["Total AG Issued"] = summary.agLetters.length;
+      row["AG Names / Subjects"] = summary.agLetters.join(" | ");
+      row["All Issued Companies"] = letterCompanies.join(" | ");
+      row["All Issued Departments"] = letterDepartments.join(" | ");
+      row["Created Date"] = formatDate(client.created_at);
+      row["Updated Date"] = formatDate(client.updated_at);
+
+      return row;
+    });
+}
+
+function buildClientsExportCsv({ data, clients, clientFields, groupCompanyName = "", groupDepartmentName = "" }) {
+  const rows = buildClientsExportRows({ data, clients, clientFields, groupCompanyName, groupDepartmentName });
+
+  if (!rows.length) {
+    return "";
+  }
+
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.map(csvEscape).join(",")];
+  rows.forEach((row) => {
+    lines.push(headers.map((header) => csvEscape(row[header] ?? "")).join(","));
+  });
+
+  return lines.join("\n");
+}
+
+function safeFileToken(value, fallback = "unassigned") {
+  return slugify(value || fallback) || fallback;
+}
+
+function getClientCompanyKeys(client, data, summary) {
+  const names = new Set();
+  if (String(client.company || "").trim()) {
+    names.add(String(client.company).trim());
+  }
+  getLetterCompanyNames(summary.clientLetters, data.companies || []).forEach((name) => names.add(name));
+  return Array.from(names);
+}
+
+function getClientDepartmentEntries(client, data, summary) {
+  const entries = new Map();
+  summary.clientLetters.forEach((letter) => {
+    const company = (data.companies || []).find((item) => item.id === letter.companyId);
+    const department = (data.departments || []).find((item) => item.id === letter.departmentId);
+    const key = `${company?.name || client.company || "Unassigned Company"}||${department?.name || "Unassigned Department"}`;
+    entries.set(key, {
+      companyName: company?.name || client.company || "Unassigned Company",
+      departmentName: department?.name || "Unassigned Department",
+    });
+  });
+
+  if (!entries.size) {
+    const companyName = client.company || "Unassigned Company";
+    const departmentName = getClientExportValue(client, "department") || getClientExportValue(client, "designation") || "Unassigned Department";
+    entries.set(`${companyName}||${departmentName}`, { companyName, departmentName });
+  }
+
+  return Array.from(entries.values());
+}
+
+function clientBelongsToCompany(client, company, data) {
+  if (!client || !company) {
+    return false;
+  }
+
+  const clientCompany = String(client.company || "").trim().toLowerCase();
+  const companyName = String(company.name || "").trim().toLowerCase();
+  if (clientCompany && companyName && clientCompany === companyName) {
+    return true;
+  }
+
+  const summary = summarizeClientLetters(client, data);
+  return summary.clientLetters.some((letter) => letter.companyId === company.id);
+}
+
+function clientBelongsToDepartment(client, department, data) {
+  if (!client || !department) {
+    return false;
+  }
+
+  const summary = summarizeClientLetters(client, data);
+  if (summary.clientLetters.some((letter) => letter.departmentId === department.id)) {
+    return true;
+  }
+
+  const clientDepartment = (
+    getClientExportValue(client, "department")
+    || getClientExportValue(client, "designation")
+    || getClientExportValue(client, "employee_department")
+  ).trim().toLowerCase();
+
+  return Boolean(clientDepartment && clientDepartment === String(department.name || "").trim().toLowerCase());
+}
+
+function clientHasDepartmentInCompany(client, company, data) {
+  const departments = (data.departments || []).filter((department) => department.companyId === company?.id);
+  return departments.some((department) => clientBelongsToDepartment(client, department, data));
+}
+
+function xmlEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeWorksheetName(value, fallback = "Sheet") {
+  const clean = String(value || fallback)
+    .replace(/[:\\/?*\[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 31);
+
+  return clean || fallback;
+}
+
+function createUniqueWorksheetName(value, usedNames) {
+  const base = normalizeWorksheetName(value);
+  let name = base;
+  let index = 2;
+  while (usedNames.has(name.toLowerCase())) {
+    const suffix = ` ${index}`;
+    name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+    index += 1;
+  }
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
+function rowsToWorksheet(name, rows, usedNames) {
+  const sheetName = createUniqueWorksheetName(name, usedNames);
+  const headers = rows.length ? Object.keys(rows[0]) : ["No Data"];
+  const bodyRows = rows.length ? rows : [{ "No Data": "No clients found for this selection." }];
+  const headerXml = headers
+    .map((header) => `<Cell><Data ss:Type="String">${xmlEscape(header)}</Data></Cell>`)
+    .join("");
+  const rowsXml = bodyRows
+    .map((row) => `<Row>${headers.map((header) => `<Cell><Data ss:Type="String">${xmlEscape(row[header] ?? "")}</Data></Cell>`).join("")}</Row>`)
+    .join("");
+
+  return `<Worksheet ss:Name="${xmlEscape(sheetName)}"><Table><Row>${headerXml}</Row>${rowsXml}</Table></Worksheet>`;
+}
+
+function buildExcelWorkbook(sheets) {
+  const usedNames = new Set();
+  const worksheetXml = sheets
+    .filter((sheet) => sheet && sheet.name)
+    .map((sheet) => rowsToWorksheet(sheet.name, sheet.rows || [], usedNames))
+    .join("");
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+${worksheetXml}
+</Workbook>`;
+}
+
+export function buildClientExcelExport(data, options = {}) {
+  const exportData = data || {};
+  const clients = Array.isArray(exportData.clients) ? exportData.clients : [];
+  const clientFields = Array.isArray(exportData.clientFields) ? exportData.clientFields : [];
+  const dateToken = getTodayIso();
+
+  if (!clients.length) {
+    return null;
+  }
+
+  if (options.scope !== "company") {
+    return {
+      fileName: `all-clients-${dateToken}.xls`,
+      content: buildExcelWorkbook([{
+        name: "All Clients",
+        rows: buildClientsExportRows({ data: exportData, clients, clientFields }),
+      }]),
+    };
+  }
+
+  const company = (exportData.companies || []).find((item) => item.id === options.companyId);
+  if (!company) {
+    return null;
+  }
+
+  const companyClients = clients.filter((client) => clientBelongsToCompany(client, company, exportData));
+  const departmentId = String(options.departmentId || "ALL");
+
+  if (departmentId !== "ALL") {
+    const department = (exportData.departments || []).find((item) => item.id === departmentId && item.companyId === company.id);
+    if (!department) {
+      return null;
+    }
+
+    const departmentClients = companyClients.filter((client) => clientBelongsToDepartment(client, department, exportData));
+    return {
+      fileName: `clients-${safeFileToken(company.name)}-${safeFileToken(department.name)}-${dateToken}.xls`,
+      content: buildExcelWorkbook([{
+        name: department.name,
+        rows: buildClientsExportRows({
+          data: exportData,
+          clients: departmentClients,
+          clientFields,
+          groupCompanyName: company.name,
+          groupDepartmentName: department.name,
+        }),
+      }]),
+    };
+  }
+
+  const companyDepartments = (exportData.departments || [])
+    .filter((department) => department.companyId === company.id)
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+  const sheets = companyDepartments.map((department) => ({
+    name: department.name,
+    rows: buildClientsExportRows({
+      data: exportData,
+      clients: companyClients.filter((client) => clientBelongsToDepartment(client, department, exportData)),
+      clientFields,
+      groupCompanyName: company.name,
+      groupDepartmentName: department.name,
+    }),
+  }));
+  const unassignedClients = companyClients.filter((client) => !clientHasDepartmentInCompany(client, company, exportData));
+
+  if (unassignedClients.length || !sheets.length) {
+    sheets.push({
+      name: "Unassigned Department",
+      rows: buildClientsExportRows({
+        data: exportData,
+        clients: unassignedClients,
+        clientFields,
+        groupCompanyName: company.name,
+        groupDepartmentName: "Unassigned Department",
+      }),
+    });
+  }
+
+  return {
+    fileName: `clients-${safeFileToken(company.name)}-departments-${dateToken}.xls`,
+    content: buildExcelWorkbook(sheets),
+  };
+}
+
 function csvEscape(value) {
   return `"${String(value).replace(/"/g, '""')}"`;
 }

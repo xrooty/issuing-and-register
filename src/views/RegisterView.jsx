@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import EmptyState from "../components/EmptyState";
+import PaginationControls from "../components/PaginationControls";
 import { formatDate } from "../utils/lettering";
 
 export default function RegisterView({
@@ -14,6 +15,8 @@ export default function RegisterView({
   onBulkDeleteLetters,
 }) {
   const [selectedLetterIds, setSelectedLetterIds] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     const rowSet = new Set(rows.map((row) => row.id));
@@ -57,6 +60,9 @@ export default function RegisterView({
 
   const visibleRowIdSet = new Set(visibleRows.map((row) => row.id));
   const visibleSelectedCount = selectedLetterIds.filter((id) => visibleRowIdSet.has(id)).length;
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedRows = visibleRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const groupedRows = useMemo(() => {
     const groups = new Map();
 
@@ -229,6 +235,73 @@ export default function RegisterView({
           </label>
         </div>
 
+        <PaginationControls
+          page={currentPage}
+          pageSize={pageSize}
+          totalItems={visibleRows.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Select</th>
+                <th>Letter No</th>
+                <th>Date</th>
+                <th>Company</th>
+                <th>Department</th>
+                <th>Issued To</th>
+                <th>Subject</th>
+                <th>Prepared By</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.length ? (
+                paginatedRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedLetterIds.includes(row.id)}
+                        onChange={() => toggleLetterSelection(row.id)}
+                        aria-label={`Select letter ${row.letterNo}`}
+                      />
+                    </td>
+                    <td>{row.letterNo}</td>
+                    <td>{formatDate(row.issueDate)}</td>
+                    <td>{row.companyName}</td>
+                    <td>{row.departmentName}</td>
+                    <td>{row.recipientName}</td>
+                    <td>{row.subject}</td>
+                    <td>{row.preparedBy}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="button button-secondary" type="button" onClick={() => onEditLetter?.(row.id)}>
+                          Edit
+                        </button>
+                        <button className="button button-secondary" type="button" onClick={() => onPrintLetter(row.id)}>
+                          Print
+                        </button>
+                        <button className="button button-secondary" type="button" onClick={() => handleDeleteLetter(row.id)}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={9}>
+                    <EmptyState message="No letters match the current filters." />
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         {groupedRows.length ? (
           <div className="register-type-groups">
             {groupedRows.map((group) => (
@@ -317,7 +390,10 @@ export default function RegisterView({
         ) : (
           <EmptyState message="No records match the current filters." />
         )}
+ 
       </article>
+      
     </section>
+    
   );
 }
